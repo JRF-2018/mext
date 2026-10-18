@@ -64,11 +64,13 @@ mext verify examples/tweety.mext [--skeptical]    # [claimed] に書いた Exten
 mext lean examples/tweety.mext                    # Lean 証明（lean で検査できる。Mathlib 不要）
 ```
 
-Claude Code では次のように使う。
+Claude Code では次のように使う。プラグインとして入れた場合は、プラグイン名の名前空間が付く。
 
 ```
-/matcha-default-extensions examples/self_defense.matcha
+/mext:matcha-default-extensions examples/self_defense.matcha
 ```
+
+`skills/matcha-default-extensions/` を `.claude/skills/` などにコピーした場合は、`/matcha-default-extensions examples/self_defense.matcha` となる。
 
 複数の `.matcha` を一つの理論にまとめる場合は `mext init A.matcha B.matcha -o X.mext` とする。構文チェックは `matcha-check --shared-labels A.matcha B.matcha` で行う。
 
