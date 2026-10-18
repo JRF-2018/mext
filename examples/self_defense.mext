@@ -1,0 +1,89 @@
+@mext 1
+theory: self_defense.matcha
+; MEXT: Matcha EXTension notation（本レポートの考案）。書式は docs/mext.md を参照。
+
+[ai]
+; AI（または人）の判断。各行の ; 以降に理由を書く。
+;   same "代表の文言" "同じ意味の文言"
+;   neg  "文言A" "文言B"        … B は A の否定
+;   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む
+;   review "事実@評価" ok|doubtful|reject
+
+[extra]
+;   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2
+
+[claimed]
+; （検証したい Extension を 名前[*]: "文言", -"文言", ... の形で書く。* は preferred）
+
+; ===== ここから下は mext.py が自動生成（手で直さない） =====
+[atoms]
+k1     claim  "#傷害罪^刑法204条 [傷害]"  ; L2
+f1     fact   "甲がAを殴打した行為"  ; L2,L7
+r1     req    "傷害／「人の身体を傷害した」"  ; L3
+f2     fact   "Aは全治2週間の打撲を負った"  ; L3
+r2     req    "傷害／%故意"  ; L4
+f3     fact   "甲はAを殴るつもりだった"  ; L4
+x1     aux    "（L2 の AND・2項・1）"  ; L2
+c1     concl  "甲に傷害罪が成立する〔甲がAを殴打した行為〕"  ; L5,L11
+k2     claim  "#正当防衛^刑法36条1項 [正当防衛]"  ; L7
+r3     req    "正当防衛／「急迫不正の侵害」"  ; L8
+f4     fact   "Aが刃物で甲に切りかかってきた"  ; L8
+v1     eval   "Aが刃物で甲に切りかかってきた@急迫不正の侵害"  ; L8
+r4     req    "正当防衛／「自己又は他人の権利を防衛するため」"  ; L9
+f5     fact   "甲は身を守ろうとして殴った"  ; L9
+v2     eval   "甲は身を守ろうとして殴った@防衛の意思"  ; L9
+r5     req    "正当防衛／「やむを得ずにした行為」"  ; L10
+f6     fact   "素手で一回殴っただけである"  ; L10
+v3     eval   "素手で一回殴っただけである@防衛行為として相当"  ; L10
+x2     aux    "（L7 の AND・3項・1）"  ; L7
+ab1    ab     "ab(傷害)"
+
+[W]
+f1, f2, f3, f4, f5, f6
+
+[rules]
+r1: f2 -> r1  ; L3 「人の身体を傷害した」
+r2: -f2 -> -r1  ; L3 「人の身体を傷害した」（必要条件の否定）
+r3: f3 -> r2  ; L4 %故意 ^38条1項本文
+r4: -f3 -> -r2  ; L4 %故意 ^38条1項本文（必要条件の否定）
+r5: r1 & r2 -> x1  ; AND
+r6: -r1 -> -x1  ; AND（必要条件の否定）
+r7: -r2 -> -x1  ; AND（必要条件の否定）
+r8: -x1 -> -k1  ; L2 要件の否定による主張 傷害 の不成立
+r9: v1 -> r3  ; L8 「急迫不正の侵害」
+r10: -v1 -> -r3  ; L8 「急迫不正の侵害」（必要条件の否定）
+r11: v2 -> r4  ; L9 「自己又は他人の権利を防衛するため」
+r12: -v2 -> -r4  ; L9 「自己又は他人の権利を防衛するため」（必要条件の否定）
+r13: v3 -> r5  ; L10 「やむを得ずにした行為」
+r14: -v3 -> -r5  ; L10 「やむを得ずにした行為」（必要条件の否定）
+r15: r3 & r4 & r5 -> x2  ; AND
+r16: -r3 -> -x2  ; AND（必要条件の否定）
+r17: -r4 -> -x2  ; AND（必要条件の否定）
+r18: -r5 -> -x2  ; AND（必要条件の否定）
+r19: -x2 -> -k2  ; L7 要件の否定による主張 正当防衛 の不成立
+
+[defaults]
+傷害: f1, x1 : k1, c1, -ab1 / k1, c1  ; claim L2 主張 ^刑法204条
+e1: f4 : v1, r3 / v1  ; eval L8 評価 @急迫不正の侵害
+e2: f5 : v2, r4 / v2  ; eval L9 評価 @防衛の意思
+e3: f6 : v3, r5 / v3  ; eval L10 評価 @防衛行為として相当
+正当防衛: f1, x2 : k2, -c1 / k2, -c1, ab1  ; claim L7 主張 ^刑法36条1項
+
+[priority]
+正当防衛 > 傷害
+
+[extensions]
+; 衝突しうるデフォルト: 傷害, 正当防衛
+E1:
+  generating: 傷害, e1, e2, e3
+  literals: k1, f1, r1, f2, r2, f3, x1, c1, r3, f4, v1, r4, f5, v2, r5, f6, v3, x2
+E2 preferred:
+  generating: e1, e2, e3, 正当防衛
+  literals: f1, r1, f2, r2, f3, x1, -c1, k2, r3, f4, v1, r4, f5, v2, r5, f6, v3, x2, ab1
+
+[marks]
+
+[summary]
+extensions: 2 (preferred: 1)
+skeptical: -c1, k2
+credulous: -c1, k2

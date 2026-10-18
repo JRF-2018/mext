@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mext"
+version = "0.1.0"
+description = "Read Matcha legal-reasoning code as default logic: syntax checker, Reiter/prioritized extension solver with Lean certificates"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "JRF" }]
+requires-python = ">=3.8"
+
+[project.urls]
+Homepage = "https://github.com/JRF-2018/mext"
+
+[project.scripts]
+matcha-check = "mext.matcha_check:main"
+mext = "mext.core:main"
+
+[tool.setuptools]
+packages = ["mext"]

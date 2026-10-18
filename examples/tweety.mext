@@ -1,0 +1,64 @@
+@mext 1
+theory: tweety.matcha
+; MEXT: Matcha EXTension notation（本レポートの考案）。書式は docs/mext.md を参照。
+
+[ai]
+; AI（または人）の判断。各行の ; 以降に理由を書く。
+;   same "代表の文言" "同じ意味の文言"
+;   neg  "文言A" "文言B"        … B は A の否定
+;   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む
+;   review "事実@評価" ok|doubtful|reject
+
+[extra]
+;   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2
+
+[claimed]
+A*: -"トゥイーティーは飛ぶ", "ab(鳥は飛ぶ)"
+B*: "トゥイーティーは飛ぶ"
+C: "トゥイーティーは飛ぶ"
+
+; ===== ここから下は mext.py が自動生成（手で直さない） =====
+[atoms]
+k1     claim  "#飛行^鳥の通念 [鳥は飛ぶ]"  ; L2
+f1     fact   "トゥイーティー"  ; L2,L6
+r1     req    "鳥は飛ぶ／%鳥である"  ; L3
+f2     fact   "トゥイーティーは鳥である"  ; L3
+c1     concl  "トゥイーティーは飛ぶ〔トゥイーティー〕"  ; L4,L8
+k2     claim  "#非飛行^ペンギンの通念 [ペンギン例外]"  ; L6
+r2     req    "ペンギン例外／%ペンギンである"  ; L7
+f3     fact   "トゥイーティーはペンギンである"  ; L7
+ab1    ab     "ab(鳥は飛ぶ)"
+
+[W]
+f1, f2, f3
+
+[rules]
+r1: f2 -> r1  ; L3 %鳥である
+r2: -f2 -> -r1  ; L3 %鳥である（必要条件の否定）
+r3: -r1 -> -k1  ; L2 要件の否定による主張 鳥は飛ぶ の不成立
+r4: f3 -> r2  ; L7 %ペンギンである
+r5: -f3 -> -r2  ; L7 %ペンギンである（必要条件の否定）
+r6: -r2 -> -k2  ; L6 要件の否定による主張 ペンギン例外 の不成立
+
+[defaults]
+鳥は飛ぶ: f1, r1 : k1, c1, -ab1 / k1, c1  ; claim L2 主張 ^鳥の通念
+ペンギン例外: f1, r2 : k2, -c1 / k2, -c1, ab1  ; claim L6 主張 ^ペンギンの通念
+
+[priority]
+ペンギン例外 > 鳥は飛ぶ
+
+[extensions]
+; 衝突しうるデフォルト: 鳥は飛ぶ, ペンギン例外
+E1:
+  generating: 鳥は飛ぶ
+  literals: k1, f1, r1, f2, c1, r2, f3
+E2 preferred:
+  generating: ペンギン例外
+  literals: f1, r1, f2, -c1, k2, r2, f3, ab1
+
+[marks]
+
+[summary]
+extensions: 2 (preferred: 1)
+skeptical: -c1, k2
+credulous: -c1, k2

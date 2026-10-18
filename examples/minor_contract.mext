@@ -1,0 +1,74 @@
+@mext 1
+theory: minor_contract.matcha
+; MEXT: Matcha EXTension notation（本レポートの考案）。書式は docs/mext.md を参照。
+
+[ai]
+; AI（または人）の判断。各行の ; 以降に理由を書く。
+;   same "代表の文言" "同じ意味の文言"
+;   neg  "文言A" "文言B"        … B は A の否定
+;   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む
+;   review "事実@評価" ok|doubtful|reject
+
+[extra]
+;   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2
+
+[claimed]
+; （検証したい Extension を 名前[*]: "文言", -"文言", ... の形で書く。* は preferred）
+
+; ===== ここから下は mext.py が自動生成（手で直さない） =====
+[atoms]
+k1     claim  "#契約の有効^民法522条 [一般則]"  ; L2
+f1     fact   "本件売買"  ; L2,L6
+r1     req    "一般則／%申込みと承諾の合致"  ; L3
+f2     fact   "AはBに本件自転車を3万円で売ると申し込みBは承諾した"  ; L3
+c1     concl  "本件売買は有効である〔本件売買〕"  ; L4,L10
+k2     claim  "#未成年者取消^民法5条2項 [特則]"  ; L6
+r2     req    "特則／「未成年者」"  ; L7
+f3     fact   "Bは17歳である"  ; L7
+r3     req    "特則／%法定代理人の同意がない"  ; L8
+f4     fact   "Bの親権者は同意していない"  ; L8
+r4     req    "特則／%取消しの意思表示"  ; L9
+f5     fact   "BはAに取消しを通知した"  ; L9
+x1     aux    "（L6 の AND・3項・1）"  ; L6
+
+[W]
+f1, f2, f3, f4, f5
+
+[rules]
+r1: f2 -> r1  ; L3 %申込みと承諾の合致
+r2: -f2 -> -r1  ; L3 %申込みと承諾の合致（必要条件の否定）
+r3: -r1 -> -k1  ; L2 要件の否定による主張 一般則 の不成立
+r4: f3 -> r2  ; L7 「未成年者」
+r5: -f3 -> -r2  ; L7 「未成年者」（必要条件の否定）
+r6: f4 -> r3  ; L8 %法定代理人の同意がない
+r7: -f4 -> -r3  ; L8 %法定代理人の同意がない（必要条件の否定）
+r8: f5 -> r4  ; L9 %取消しの意思表示
+r9: -f5 -> -r4  ; L9 %取消しの意思表示（必要条件の否定）
+r10: r2 & r3 & r4 -> x1  ; AND
+r11: -r2 -> -x1  ; AND（必要条件の否定）
+r12: -r3 -> -x1  ; AND（必要条件の否定）
+r13: -r4 -> -x1  ; AND（必要条件の否定）
+r14: -x1 -> -k2  ; L6 要件の否定による主張 特則 の不成立
+
+[defaults]
+一般則: f1, r1 : k1, c1 / k1, c1  ; claim L2 主張 ^民法522条
+特則: f1, x1 : k2, -c1 / k2, -c1  ; claim L6 主張 ^民法5条2項
+
+[priority]
+特則 > 一般則
+
+[extensions]
+; 衝突しうるデフォルト: 一般則, 特則
+E1:
+  generating: 一般則
+  literals: k1, f1, r1, f2, c1, r2, f3, r3, f4, r4, f5, x1
+E2 preferred:
+  generating: 特則
+  literals: f1, r1, f2, -c1, k2, r2, f3, r3, f4, r4, f5, x1
+
+[marks]
+
+[summary]
+extensions: 2 (preferred: 1)
+skeptical: -c1, k2
+credulous: -c1, k2

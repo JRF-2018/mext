@@ -1,0 +1,14 @@
+{
+  "name": "jrf-mext",
+  "owner": {
+    "name": "JRF"
+  },
+  "description": "JRF のプラグイン: Matcha の論証をデフォルト論理として検査する mext",
+  "plugins": [
+    {
+      "name": "mext",
+      "source": "./",
+      "description": "Matcha の論証をデフォルト論理として検査するスキル matcha-default-extensions"
+    }
+  ]
+}

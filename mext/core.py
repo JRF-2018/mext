@@ -1,0 +1,1422 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+mext.py -- Matcha(-D) をデフォルト理論に変換し、Extension を計算・検証する
+
+MEXT（Matcha EXTension notation）は本レポートが考案した、デフォルト理論とその Extension を
+人が読めて機械が検証できる形で書くためのテキスト形式である。
+
+論理: リテラル（原子命題とその否定）だけからなる命題デフォルト理論 (W, R, D, <)
+  W: 確定事実（リテラルの集合）
+  R: 確定規則 l1 & ... & lk -> l （推論規則として扱い、対偶は取らない）
+  D: デフォルト  前提 : 正当化1, 正当化2, ... / 結論1, 結論2, ...
+     （前提はリテラルの連言、正当化は各リテラルが別々に無矛盾であることを要求する）
+  <: デフォルト間の優先順位
+Reiter (1980) の Extension を、Gelfond & Lifschitz (1991) の拡張論理プログラムとの対応のもとで
+厳密に計算する。優先順位は「優先順位を尊重する生成」（Brewka 1994 型、定義は docs/mext.md）で扱う。
+
+使い方（pip で入れた場合は `mext ...`、そうでなければ `python3 -m mext ...`）:
+  python3 mext.py init  FILE.matcha [-o FILE.mext]   # AI 指示が空の MEXT ひな形を作る
+  python3 mext.py solve FILE.mext                    # 変換・Extension 計算を行い、生成部分を書き直す
+  python3 mext.py verify FILE.mext                   # [extensions] に書かれた Extension が正しいかを検証
+  python3 mext.py report FILE.mext                   # Markdown の表（レポート用）
+  python3 mext.py explain FILE.mext E1 "文言"         # Extension E1 での導出の根拠をたどる
+  python3 mext.py lean FILE.mext [-o FILE.lean]      # Extension であることの Lean 証明を出力
+"""
+import sys
+import os
+import re
+import argparse
+import itertools
+
+try:
+    from . import matcha_check as mc
+except ImportError:            # パッケージとしてではなく直接実行された場合
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import matcha_check as mc   # noqa: E402
+
+GEN_MARK = '; ===== ここから下は mext.py が自動生成（手で直さない） ====='
+
+
+# ---------------------------------------------------------------------------
+# デフォルト理論
+# ---------------------------------------------------------------------------
+class Atom:
+    def __init__(self, aid, kind, text, line):
+        self.id = aid          # 1 から始まる整数
+        self.kind = kind       # fact req claim concl aux eval issue ab extra
+        self.text = text
+        self.lines = [line] if line else []
+        self.name = None       # f3, r5 など
+
+    PREFIX = {'fact': 'f', 'req': 'r', 'claim': 'k', 'concl': 'c', 'aux': 'x',
+              'eval': 'v', 'issue': 'q', 'reason': 'y', 'ab': 'ab', 'extra': 'z'}
+
+
+class Default:
+    def __init__(self, name, pre, just, concl, kind, line=0, note=''):
+        self.name = name
+        self.pre, self.just, self.concl = (list(dict.fromkeys(x)) for x in (pre, just, concl))
+        self.kind, self.line, self.note = kind, line, note
+
+
+class Rule:
+    def __init__(self, body, head, line=0, note=''):
+        self.body, self.head, self.line, self.note = list(body), head, line, note
+
+
+class Theory:
+    def __init__(self):
+        self.atoms = {}        # text -> Atom
+        self.by_id = {}
+        self.W = []
+        self.rules = []
+        self.defaults = {}     # name -> Default（挿入順を保持）
+        self.priority = set()  # (高, 低)
+        self.marks = []        # (lit, '+'/'!', line, 説明)
+        self.labels = {}       # Matcha のラベル -> リテラル
+        self.aliases = {}      # 別名（ラベル・元の文言・neg/same 前の文言）-> リテラルの集合
+        self.rejected = set()  # AI の審査で棄却された評価の原子
+        self.notes = []
+
+    def alias(self, text, l):
+        if text:
+            self.aliases.setdefault(text, set()).add(l)
+
+    # --- 原子命題
+    def atom(self, kind, text, line=0):
+        if text in self.atoms:
+            a = self.atoms[text]
+            if line and line not in a.lines:
+                a.lines.append(line)
+            return a.id
+        aid = len(self.atoms) + 1
+        a = Atom(aid, kind, text, line)
+        self.atoms[text] = a
+        self.by_id[aid] = a
+        return aid
+
+    def name_atoms(self):
+        cnt = {}
+        for a in sorted(self.atoms.values(), key=lambda a: a.id):
+            p = Atom.PREFIX.get(a.kind, 'z')
+            cnt[p] = cnt.get(p, 0) + 1
+            a.name = f'{p}{cnt[p]}'
+        self.by_name = {a.name: a.id for a in self.atoms.values()}
+
+    def lit_str(self, l):
+        a = self.by_id[abs(l)]
+        return ('-' if l < 0 else '') + a.name
+
+    def lit_text(self, l):
+        a = self.by_id[abs(l)]
+        return ('¬' if l < 0 else '') + a.text
+
+    def add_W(self, l):
+        if l not in self.W:
+            self.W.append(l)
+
+    def add_rule(self, body, head, line=0, note=''):
+        for r in self.rules:
+            if r.head == head and r.body == list(body):
+                return
+        self.rules.append(Rule(body, head, line, note))
+
+    def add_default(self, d):
+        base, k = d.name, 2
+        while d.name in self.defaults:
+            d.name = f'{base}_{k}'
+            k += 1
+        self.defaults[d.name] = d
+        return d.name
+
+
+# ---------------------------------------------------------------------------
+# AI 指示（[ai] 節）と追加知識（[extra] 節）
+# ---------------------------------------------------------------------------
+class AIDirectives:
+    def __init__(self):
+        self.same = {}      # 文言 -> 代表の文言
+        self.neg = {}       # 文言 B -> 文言 A （B は ¬A）
+        self.failure = set()
+        self.effect = set()
+        self.review = {}    # 評価デフォルトの文言 "事実@評価" -> (ok|doubtful|reject, 注)
+        self.extra = []     # (種類, 内容, 注)
+        self.raw = []       # 元の行（書き戻し用）
+
+    def canon(self, text):
+        seen = set()
+        while text in self.same and text not in seen:
+            seen.add(text)
+            text = self.same[text]
+        return text
+
+
+QSTR = r'"((?:[^"\\]|\\.)*)"'
+
+
+def parse_ai_line(line, ai, lineno, errs):
+    body, note = split_note(line)
+    s = body.strip()
+    if not s:
+        return
+    toks = re.findall(QSTR + r'|(\S+)', s)
+    words = [(q if q else w) for q, w in toks]
+    quoted = [bool(q) for q, w in toks]
+    cmd = words[0] if words else ''
+    try:
+        if cmd == 'same' and len(words) == 3:
+            ai.same[words[2]] = words[1]
+        elif cmd == 'neg' and len(words) == 3:
+            ai.neg[words[2]] = words[1]
+        elif cmd == 'failure' and len(words) == 2:
+            ai.failure.add(words[1])
+        elif cmd == 'effect' and len(words) == 2:
+            ai.effect.add(words[1])
+        elif cmd == 'review' and len(words) == 3 and words[2] in ('ok', 'doubtful', 'reject'):
+            ai.review[words[1]] = (words[2], note)
+        else:
+            errs.append(f'[ai] {lineno} 行目を解釈できません: {line.strip()}')
+    except IndexError:
+        errs.append(f'[ai] {lineno} 行目を解釈できません: {line.strip()}')
+
+
+def split_note(line):
+    """; 以降を注として分ける（"…" の中の ; は除く）"""
+    in_q, esc = False, False
+    for i, ch in enumerate(line):
+        if esc:
+            esc = False
+            continue
+        if ch == '\\':
+            esc = True
+        elif ch == '"':
+            in_q = not in_q
+        elif ch == ';' and not in_q:
+            return line[:i], line[i + 1:].strip()
+    return line, ''
+
+
+# ---------------------------------------------------------------------------
+# Matcha の構文木 → デフォルト理論（決定論的な変換）
+# ---------------------------------------------------------------------------
+def author_status(n):
+    """著者が主張する成否（+ / ! / None）。印がなければ下位から推定する"""
+    if n is None:
+        return None
+    if n.mark:
+        return n.mark
+    if n.kind == 'group':
+        st = [author_status(x) for x in n.items]
+        if n.op == 'AND':
+            if '!' in st:
+                return '!'
+            if st and all(x == '+' for x in st):
+                return '+'
+        else:
+            if '+' in st:
+                return '+'
+            if st and all(x == '!' for x in st):
+                return '!'
+        return None
+    if n.kind == 'issue':
+        return author_status(n.norm) or author_status(n.application)
+    if n.kind in ('claim', 'req', 'plain', 'ref'):
+        return author_status(n.body)
+    return None
+
+
+class Compiler:
+    """Matcha の構文木からデフォルト理論を作る（決定論的）。
+
+    要件・言い換え・AND/OR は「必要十分条件」として読む: 下位が成り立てば上位が成り立ち（r ← 下位）、
+    下位のどれかが否定されれば上位も否定される（¬r ← ¬下位）。これにより「立証されていない」（Extension に
+    含まれない）と「否定の根拠がある」（¬r が Extension に含まれる）が区別される。
+    """
+
+    def __init__(self, ai):
+        self.prefix = ''          # 複数ファイルのとき「ファイル名:」
+        self.th = Theory()
+        self.ai = ai
+        self.n_eval = 0
+        self.n_reason = 0
+        self.pending_ab = []
+        self.claim_keys = set()
+
+    def loc(self, line):
+        """行の位置の表示（複数ファイルのときは「ファイル名:L12」）"""
+        return f'{self.prefix}:L{line}' if self.prefix else f'L{line}'
+
+    def loc_name(self, line):
+        """デフォルトの名前に使える位置（: を含まない）"""
+        return f'{self.prefix}.L{line}' if self.prefix else f'L{line}'
+
+    # --- 文言から原子・リテラルへ（AI の same / neg を反映し、元の文言を別名として登録）
+    def lit(self, kind, text, line=0, aliases=()):
+        orig = text
+        text = self.ai.canon(text)
+        if text in self.ai.neg:
+            base = self.ai.canon(self.ai.neg[text])
+            k = self.th.atoms[base].kind if base in self.th.atoms else kind
+            l = -self.th.atom(k, base, self.loc(line) if line else 0)
+        else:
+            l = self.th.atom(kind, text, self.loc(line) if line else 0)
+        for a in (orig, text) + tuple(aliases):
+            self.th.alias(a, l)
+        return l
+
+    def define(self, head, parts, line, note):
+        """head ↔ parts の連言（必要十分）。parts が否定されれば head も否定される"""
+        self.th.add_rule(parts, head, line, note)
+        for p in parts:
+            self.th.add_rule([-p], -head, line, note + '（必要条件の否定）')
+
+    def aux(self, op, lits, line):
+        if len(lits) == 1:
+            return lits[0]
+        k = 1
+        while f'（{self.loc(line)} の {op}・{len(lits)}項・{k}）' in self.th.atoms:
+            k += 1
+        aid = self.th.atom('aux', f'（{self.loc(line)} の {op}・{len(lits)}項・{k}）', self.loc(line))
+        if op == 'AND':
+            self.define(aid, lits, line, 'AND')
+        else:
+            for l in lits:
+                self.th.add_rule([l], aid, line, 'OR')
+            self.th.add_rule([-l for l in lits], -aid, line, 'OR（すべての選択肢の否定）')
+        return aid
+
+    # --- 文書
+    def compile(self, doc):
+        for n in doc.items:
+            self.top(n)
+        return self.finish()
+
+    def finish(self):
+        for hi, lo in self.pending_ab:
+            if hi not in self.th.defaults or lo not in self.th.defaults:
+                continue
+            ab = self.th.atom('ab', f'ab({lo})')
+            self.th.alias(f'ab({lo})', ab)
+            d_lo, d_hi = self.th.defaults[lo], self.th.defaults[hi]
+            if -ab not in d_lo.just:
+                d_lo.just.append(-ab)
+            if ab not in d_hi.concl:
+                d_hi.concl.append(ab)
+        return self.th
+
+    def top(self, n):
+        if n.kind == 'section':
+            for c in n.items:
+                self.top(c)
+        elif n.kind == 'priority':
+            self.th.priority.add((n.head[0], n.head[1]))
+        else:
+            self.elem(n, '')
+
+    def elem(self, n, path, inherited=None):
+        if n.kind == 'claim':
+            return self.claim(n)
+        if n.kind == 'group':
+            lits = [self.elem(x, path) for x in n.items]
+            lits = [l for l in lits if l]
+            return self.aux(n.op, lits, n.line) if lits else None
+        if n.kind == 'issue':
+            return self.issue(n, path)
+        if n.kind in ('req', 'plain', 'ref'):
+            return self.req(n, path, inherited)
+        if n.kind == 'fact':
+            return self.facts(n)
+        if n.kind == 'section':
+            for c in n.items:
+                self.top(c)
+            return None
+        return None
+
+    def node_text(self, n):
+        if n.kind == 'req':
+            return f'「{n.head}」{n.suffix or ""}' if n.quote else f'%{n.head}'
+        if n.kind == 'ref':
+            return f'${n.head}'
+        return n.head or ''
+
+    def is_failure(self, n, texts):
+        for t in texts:
+            if t and (t in self.ai.failure or self.ai.canon(t) in self.ai.failure):
+                return True
+            if t and (t in self.ai.effect or self.ai.canon(t) in self.ai.effect):
+                return False
+        if n.conclusion and n.conclusion.get('negated'):
+            return False
+        return author_status(n) == '!'
+
+    def conclusion_lit(self, n, qualifier):
+        c = n.conclusion
+        key = f'{c["text"]}〔{qualifier}〕' if qualifier else c['text']
+        l = self.lit('concl', key, c['line'], aliases=(c['text'],))
+        return -l if c['negated'] else l
+
+    @staticmethod
+    def fact_text(n):
+        if n is None:
+            return ''
+        if n.kind == 'fact':
+            return n.head
+        if n.kind == 'group':
+            return (' & ' if n.op == 'AND' else ' | ').join(Compiler.fact_text(x) for x in n.items)
+        return n.head or ''
+
+    def claim(self, n):
+        label = n.label or self.loc_name(n.line)
+        head = n.head or ''
+        k_text = f'#{head}' + (f'^{n.basis}' if n.basis else '')
+        if n.label or k_text in self.claim_keys:
+            k_text += f' [{label}]'      # ラベルがあれば常に付ける（同名の主張を見分けるため）
+        self.claim_keys.add(k_text)
+        k = self.lit('claim', k_text, n.line, aliases=(label, f'#{head}'))
+        if n.label:
+            self.th.labels[n.label] = k
+        # 要件の原子を区別する「主張の名前」: ラベルがあればラベル、なければ主張名（重複すれば [位置] を付ける）
+        if n.label:
+            path = n.label
+        elif k_text.endswith(f' [{label}]'):
+            path = f'{head or label} [{label}]'
+        else:
+            path = head or label
+        target = self.fact_text(n.facts) if n.facts is not None else ''
+        pre, body = [], None
+        if n.facts is not None:
+            l = self.facts(n.facts)
+            if l:
+                pre.append(l)
+        if n.body is not None:
+            body = self.elem(n.body, path)
+            if body:
+                pre.append(body)
+        c_text = n.conclusion['text'] if n.conclusion else None
+        c_key = (f'{c_text}〔{target}〕' if target else c_text) if c_text else None
+        failure = n.conclusion is not None and self.is_failure(n, (k_text, label, f'#{head}', c_key, c_text))
+        concl = [k]
+        if n.conclusion and not failure:
+            concl.append(self.conclusion_lit(n, target))
+        note = f'{self.loc(n.line)} 主張' + (f' ^{n.basis}' if n.basis else '')
+        name = self.th.add_default(Default(label, pre, list(concl), concl, 'claim', n.line, note))
+        if body:
+            self.th.add_rule([-body], -k, n.line, f'{self.loc(n.line)} 要件の否定による主張 {name} の不成立')
+        if n.conclusion and failure:
+            c = self.conclusion_lit(n, target)
+            fname = self.th.add_default(Default(f'{name}.不成立', [], [-k, c], [c], 'failure', n.conclusion['line'],
+                                                f'{self.loc(n.conclusion["line"])} 主張 {name} が成立しないことからの結論'))
+            self.th.priority.add((name, fname))   # 主張が成り立つなら、そちらが優先
+        for e in n.excepts:
+            self.th.priority.add((name, e))
+            self.pending_ab.append((name, e))
+        if n.mark:
+            self.th.marks.append((k, n.mark, self.loc(n.line), f'#{head}'))
+        return k
+
+    def req(self, n, path, inherited=None):
+        """要件。著者が不成立（!）とした要件の <= 事実 は「要件を満たさない根拠」として ¬要件 を導く。
+        言い換えだけの下位要件（: %定義 の 1 要素）は親の ! を引き継ぐ。"""
+        text = self.node_text(n)
+        key = f'{path}／{text}' if path else text
+        r = self.lit('req', key, n.line, aliases=(text,))
+        if n.label:
+            self.th.labels[n.label] = r
+            self.th.alias(n.label, r)
+        m = n.mark or inherited
+        note = f'{self.loc(n.line)} {text}' + (f' ^{n.basis}' if n.basis else '')
+        parts = []
+        if n.body is not None:
+            sub_inh = m if (m == '!' and n.body.kind != 'group') else None
+            l = self.elem(n.body, path, sub_inh)
+            if l:
+                parts.append(l)
+        review = (self.ai.review.get(key) or self.ai.review.get(text) or self.ai.review.get(n.head or '')
+                  or (self.ai.review.get(n.label) if n.label else None))
+        if n.facts is not None:
+            target = -r if m == '!' else r
+            l = self.facts(n.facts, target)
+            if l and review and review[0] == 'reject':
+                self.th.notes.append(f'AI の審査で棄却されたあてはめ: {key} <= {self.fact_text(n.facts)}')
+            elif l and m == '!':
+                self.th.add_rule([l], -r, n.line, note + '（不成立の根拠）')
+            elif l:
+                parts.append(l)
+        if review and review[0] == 'doubtful':
+            note += '（AI: 疑わしい）'
+        if parts:
+            self.define(r, parts, n.line, note)
+        self.conclude_strict(n, r, key, path)
+        if n.mark:
+            self.th.marks.append((r, n.mark, self.loc(n.line), text))
+        return r
+
+    def conclude_strict(self, n, l, key, path):
+        if not n.conclusion:
+            return
+        c = self.conclusion_lit(n, path)
+        c_key = f'{n.conclusion["text"]}〔{path}〕' if path else n.conclusion['text']
+        if self.is_failure(n, (key, c_key, n.conclusion['text'])):
+            self.th.add_default(Default(f'{self.loc_name(n.conclusion["line"])}.不成立', [], [-l, c], [c], 'failure',
+                                        n.conclusion['line'], f'{self.loc(n.conclusion["line"])} 不成立からの結論'))
+        else:
+            self.th.add_rule([l], c, n.conclusion['line'], f'{self.loc(n.conclusion["line"])} 結論')
+
+    def reasons(self, n):
+        """~> 理由。事実ではなく論証の前提なので W には入れず、「受け入れられる」デフォルトとする"""
+        if n.kind == 'group':
+            lits = [self.reasons(x) for x in n.items]
+            lits = [l for l in lits if l]
+            return self.aux(n.op, lits, n.line) if lits else None
+        if n.kind == 'fact':
+            y = self.lit('reason', n.head, n.line)
+            self.n_reason += 1
+            self.th.add_default(Default(f'y{self.n_reason}', [], [y], [y], 'reason', n.line,
+                                        f'{self.loc(n.line)} 理由（論証の前提として受け入れる）'))
+            return y
+        return self.elem(n, '')
+
+    def issue(self, n, path):
+        if n.facts is not None:
+            self.facts(n.facts)     # 問題提起の原因となる事実（W）
+        key = f'{path}／? {n.head}' if path else f'? {n.head}'
+        q = self.lit('issue', key, n.line, aliases=(f'? {n.head}',))
+        parts = []
+        if n.reason is not None:
+            l = self.reasons(n.reason)
+            if l:
+                parts.append(l)
+        if n.norm is not None:
+            l = self.elem(n.norm, path, n.mark if n.norm.kind != 'group' else None)
+            if l:
+                parts.append(l)
+        if n.application is not None:
+            l = self.elem(n.application, path)
+            if l:
+                parts.append(l)
+        if parts:
+            self.define(q, parts, n.line, f'{self.loc(n.line)} 論点「{n.head}」')
+        else:
+            self.th.add_default(Default(f'q{self.loc_name(n.line)}', [], [q], [q], 'issue', n.line,
+                                        f'{self.loc(n.line)} 論点「{n.head}」（理由も規範もない主張として受け入れる）'))
+        self.conclude_strict(n, q, key, path)
+        if n.mark:
+            self.th.marks.append((q, n.mark, self.loc(n.line), f'? {n.head}'))
+        return q
+
+    def facts(self, n, target=None):
+        if n.kind == 'group':
+            lits = [self.facts(x, target) for x in n.items]
+            lits = [l for l in lits if l]
+            g = self.aux(n.op, lits, n.line) if lits else None
+            if g and n.eval:
+                return self.evaluate(g, f'（{self.loc(n.line)} の事実群）', n.eval, n.line, target)
+            return g
+        if n.kind == 'fact':
+            f = self.lit('fact', n.head, n.line)
+            self.th.add_W(f)
+            if n.label:
+                self.th.labels[n.label] = f
+                self.th.alias(n.label, f)
+            if n.eval:
+                return self.evaluate(f, n.head, n.eval, n.line, target)
+            return f
+        return self.elem(n, '')
+
+    def evaluate(self, l, ftext, ev, line, target):
+        """事実@評価 … 評価は争いうるあてはめなので、デフォルト  事実 : v, 目標 / v  にする。
+        目標（あてはめ先の要件、または不成立の要件の否定）が否定されていれば評価は働かない。"""
+        vtext = f'{ftext}@{ev}'
+        v = self.lit('eval', vtext, line)
+        self.n_eval += 1
+        name = f'e{self.n_eval}'
+        status = self.ai.review.get(vtext, ('ok', ''))[0]
+        if status == 'reject':
+            self.th.notes.append(f'{name}（{self.loc(line)} 評価 @{ev}）は AI の審査で棄却された')
+            self.th.rejected.add(v)
+            return v
+        just = [v] + ([target] if target else [])
+        self.th.add_default(Default(name, [l], just, [v], 'eval', line,
+                                    f'{self.loc(line)} 評価 @{ev}' + ('（AI: 疑わしい）' if status == 'doubtful' else '')))
+        return v
+
+    # --- [extra] 節
+    def extra(self, items, errs):
+        for kind, body, note, lineno in items:
+            note = '[extra] ' + (note or '')
+            try:
+                if kind == 'fact':
+                    self.th.add_W(self.parse_lit(body))
+                elif kind == 'rule':
+                    b, h = body.split('->')
+                    self.th.add_rule([self.parse_lit(x) for x in split_lits(b)], self.parse_lit(h), 0, note)
+                elif kind == 'default':
+                    m = re.match(r'\s*(\S+?)\s*:(.*)$', body)
+                    name, rest = m.group(1), m.group(2)
+                    pre, rest = split_top(rest, ':')
+                    just, concl = split_top(rest, '/')
+                    self.th.add_default(Default(name, [self.parse_lit(x) for x in split_lits(pre)],
+                                                [self.parse_lit(x) for x in split_lits(just)],
+                                                [self.parse_lit(x) for x in split_lits(concl)], 'extra', 0, note))
+                elif kind == 'priority':
+                    a, b = [x.strip() for x in body.split('>')]
+                    self.th.priority.add((a, b))
+            except Exception as ex:   # noqa: BLE001
+                errs.append(f'[extra] {lineno} 行目を解釈できません（{ex}）')
+
+    def parse_lit(self, s):
+        s = s.strip()
+        neg = s.startswith('-')
+        if neg:
+            s = s[1:].strip()
+        m = re.fullmatch(QSTR, s)
+        if not m:
+            raise ValueError(f'リテラルは "文言" か -"文言" で書いてください: {s}')
+        t = m.group(1).replace('\\"', '"')
+        if t not in self.th.atoms and self.th.aliases.get(t) and len(self.th.aliases[t]) == 1:
+            l = next(iter(self.th.aliases[t]))       # 別名（ラベル・元の文言）で指した場合
+        else:
+            l = self.lit('extra', t)
+        return -l if neg else l
+
+
+def split_top(s, sep):
+    in_q = False
+    for i, ch in enumerate(s):
+        if ch == '"':
+            in_q = not in_q
+        elif ch == sep and not in_q:
+            return s[:i], s[i + 1:]
+    raise ValueError(f'{sep} がありません')
+
+
+def split_lits(s):
+    out, cur, in_q = [], '', False
+    for ch in s:
+        if ch == '"':
+            in_q = not in_q
+        if ch in ',&' and not in_q:
+            if cur.strip():
+                out.append(cur)
+            cur = ''
+        else:
+            cur += ch
+    if cur.strip():
+        out.append(cur)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Extension の計算
+# ---------------------------------------------------------------------------
+INCONSISTENT = 'INCONSISTENT'
+
+
+def consistent(S):
+    return not any(-l in S for l in S)
+
+
+def closure(th, defaults, gate=None):
+    """W から規則と（前提が満たされた）デフォルトで閉包を取る。gate(d) が偽のデフォルトは使わない。
+    戻り値: (集合, 導出の記録)"""
+    S = set(th.W)
+    why = {l: ('W', None) for l in th.W}
+    changed = True
+    while changed:
+        changed = False
+        for i, r in enumerate(th.rules):
+            if r.head not in S and all(b in S for b in r.body):
+                S.add(r.head)
+                why[r.head] = ('rule', i)
+                changed = True
+        for d in defaults:
+            if gate is not None and not gate(d):
+                continue
+            if all(p in S for p in d.pre) and not all(c in S for c in d.concl):
+                for c in d.concl:
+                    if c not in S:
+                        S.add(c)
+                        why[c] = ('default', d.name)
+                changed = True
+    return S, why
+
+
+def gamma(th, E):
+    """Reiter の Γ(E): E に照らして正当化が無矛盾なデフォルトだけを使った最小の閉包"""
+    if E == INCONSISTENT:
+        S, why = closure(th, [], None)
+        return (S if consistent(S) else INCONSISTENT), why
+    ok = [d for d in th.defaults.values() if all(-j not in E for j in d.just)]
+    S, why = closure(th, ok)
+    return (S if consistent(S) else INCONSISTENT), why
+
+
+def is_extension(th, E):
+    G, _ = gamma(th, E)
+    return G == E if E == INCONSISTENT or G == INCONSISTENT else G == E
+
+
+def generating(th, E):
+    if E == INCONSISTENT:
+        return []
+    return [d.name for d in th.defaults.values()
+            if all(p in E for p in d.pre) and all(-j not in E for j in d.just)]
+
+
+def extensions(th, limit_conflicting=22):
+    defs = list(th.defaults.values())
+    P, _ = closure(th, defs)            # 正当化を無視した、導出されうるリテラルの上界
+    conflicting = [d for d in defs if any(-j in P for j in d.just)]
+    safe = [d for d in defs if d not in conflicting]
+    if len(conflicting) > limit_conflicting:
+        raise RuntimeError(f'衝突しうるデフォルトが {len(conflicting)} 個あり、全列挙の上限を超えます')
+    found = []
+    base, _ = closure(th, [], None)
+    if not consistent(base):
+        return [INCONSISTENT], conflicting
+    for k in range(len(conflicting) + 1):
+        for G in itertools.combinations(conflicting, k):
+            Gs = set(id(d) for d in G)
+            S, _ = closure(th, safe + list(G))
+            if not consistent(S):
+                continue
+            if S in found:
+                continue
+            if is_extension(th, S):
+                found.append(S)
+    return found, conflicting
+
+
+def priority_closure(pairs, names):
+    hi = {n: set() for n in names}
+    for a, b in pairs:
+        if a in hi and b in hi:
+            hi[b].add(a)       # a は b より優先
+    changed = True
+    while changed:
+        changed = False
+        for b in hi:
+            add = set()
+            for a in hi[b]:
+                add |= hi[a]
+            if not add <= hi[b]:
+                hi[b] |= add
+                changed = True
+    return hi   # hi[b] = b より優先されるデフォルトの集合
+
+
+def preferred(th, E, hi):
+    """E が優先順位を尊重して生成できるか（docs/mext.md の定義。Brewka & Eiter 1999 の考え方による）。
+
+    E の生成デフォルトを、前提が満たされた順に一つずつ適用していく列 g1, g2, ... があって、
+    各 gi を適用する時点 S で、次の条件が成り立つこと:
+      gi より優先されるデフォルト d が E の生成デフォルトでなく、しかも d の前提が（最終的な）E で
+      満たされるなら、d はその時点 S ですでに打ち負かされている（d の正当化の否定が S に含まれる）。
+    """
+    if E == INCONSISTENT:
+        return True
+    GD = set(generating(th, E))
+    defs = th.defaults
+    rivals = [d for d in defs.values() if d.name not in GD and all(p in E for p in d.pre)]
+
+    def close_rules(S):
+        S = set(S)
+        changed = True
+        while changed:
+            changed = False
+            for r in th.rules:
+                if r.head not in S and all(b in S for b in r.body):
+                    S.add(r.head)
+                    changed = True
+        return S
+
+    seen = set()
+
+    def dfs(S, applied):
+        if applied == GD:
+            return S == E
+        key = frozenset(applied)
+        if key in seen:
+            return False
+        seen.add(key)
+        for g in sorted(GD - applied):
+            d = defs[g]
+            if not all(p in S for p in d.pre):
+                continue
+            if any(r.name in hi[g] and not any(-j in S for j in r.just) for r in rivals):
+                continue   # より優先される対立デフォルトが、この時点ではまだ打ち負かされていない
+            if dfs(close_rules(S | set(d.concl)), applied | {g}):
+                return True
+        return False
+
+    return dfs(close_rules(set(th.W)), frozenset())
+
+
+def solve(th):
+    exts, conflicting = extensions(th)
+    names = list(th.defaults)
+    for a, b in th.priority:
+        for x in (a, b):
+            if x not in th.defaults:
+                th.notes.append(f'優先順位に未定義のデフォルト {x} があります')
+    hi = priority_closure(th.priority, names)
+    for n in names:
+        if n in hi[n]:
+            th.notes.append(f'優先順位が循環しています（{n}）')
+    pref = [preferred(th, E, hi) for E in exts] if th.priority else [True] * len(exts)
+    return exts, pref, conflicting
+
+
+def summarize(th, exts, pref):
+    use = [E for E, p in zip(exts, pref) if p and E != INCONSISTENT]
+    if not use:
+        return None, None
+    sk = set.intersection(*[set(E) for E in use])
+    cr = set.union(*[set(E) for E in use])
+    return sk, cr
+
+
+# ---------------------------------------------------------------------------
+# MEXT ファイルの読み書き
+# ---------------------------------------------------------------------------
+class MextFile:
+    def __init__(self, path):
+        self.path = path
+        self.header = []
+        self.theory_paths = []
+        self.options = set()
+        self.ai_lines = []
+        self.extra_lines = []
+        self.ext_claims = []    # [claimed] に書かれた Extension（検証用）: (名前, preferred?, 文言集合)
+        self.claimed_lines = []
+        self.errs = []
+
+    def load(self):
+        txt = open(self.path, encoding='utf-8').read()
+        sec = None
+        for i, ln in enumerate(txt.splitlines(), 1):
+            if ln.strip() == GEN_MARK:
+                break                      # 以下は自動生成部分なので読まない
+            m = re.match(r'^\[(\w+)\]\s*$', ln.strip())
+            if m:
+                sec = m.group(1)
+                continue
+            if sec is None:
+                self.header.append(ln)
+                m2 = re.match(r'^theory:\s*(.+?)\s*$', ln)
+                if m2:
+                    self.theory_paths.append(split_note(m2.group(1))[0].strip())
+                m3 = re.match(r'^options:\s*(.*?)\s*$', ln)
+                if m3:
+                    self.options = set(m3.group(1).split(';')[0].split())
+            elif sec == 'ai':
+                self.ai_lines.append((i, ln))
+            elif sec == 'extra':
+                self.extra_lines.append((i, ln))
+            elif sec == 'claimed':
+                self.claimed_lines.append(ln)
+                self.parse_claimed(i, ln)
+        return self
+
+    def parse_claimed(self, i, ln):
+        body, _ = split_note(ln)
+        if not body.strip():
+            return
+        m = re.match(r'^\s*([^\s*:]+)\s*(\*?)\s*:\s*(.*)$', body)
+        if not m:
+            self.errs.append(f'[claimed] {i} 行目を解釈できません')
+            return
+        lits = [x.strip() for x in split_lits(m.group(3))]
+        self.ext_claims.append((m.group(1), m.group(2) == '*', lits))
+
+    def theory_files(self):
+        base = os.path.dirname(os.path.abspath(self.path))
+        if not self.theory_paths:
+            raise SystemExit('MEXT に theory: 行がありません')
+        out = []
+        for p in self.theory_paths:
+            cand = [p, os.path.join(base, p), os.path.join(base, os.path.basename(p))]
+            for c in cand:
+                if os.path.exists(c):
+                    out.append(c)
+                    break
+            else:
+                raise SystemExit(f'Matcha ファイルが見つかりません: {p}')
+        return out
+
+
+def build(mf, use_review=None):
+    if use_review is None:
+        use_review = 'no-review' not in mf.options
+    ai = AIDirectives()
+    for i, ln in mf.ai_lines:
+        if use_review or not ln.strip().startswith('review'):
+            parse_ai_line(ln, ai, i, mf.errs)
+    files = mf.theory_files()
+    if len(files) == 1:
+        docs, diags, _ = mc.check_text(open(files[0], encoding='utf-8').read())
+        docs = [docs]
+    else:
+        # 複数ファイル: ラベルの名前空間を共有して一つの理論にする。位置は「ファイル名:L12」で示す
+        named = [(os.path.splitext(os.path.basename(f))[0], open(f, encoding='utf-8').read()) for f in files]
+        docs, diags, _ = mc.check_files(named)
+    errs = [d for d in diags if d.level == 'error']
+    if errs:
+        msg = '\n'.join('  ' + str(d) for d in errs)
+        raise SystemExit(f'Matcha の構文エラーがあるため変換できません:\n{msg}')
+    comp = Compiler(ai)
+    for f, doc in zip(files, docs):
+        comp.prefix = os.path.splitext(os.path.basename(f))[0] if len(files) > 1 else ''
+        for n in doc.items:
+            comp.top(n)
+    th = comp.finish()
+    extra = []
+    for i, ln in mf.extra_lines:
+        body, note = split_note(ln)
+        m = re.match(r'^\s*(fact|rule|default|priority)\s+(.*)$', body)
+        if m:
+            extra.append((m.group(1), m.group(2), note, i))
+        elif body.strip():
+            mf.errs.append(f'[extra] {i} 行目を解釈できません: {ln.strip()}')
+    comp.extra(extra, mf.errs)
+    known = set(th.atoms) | set(th.aliases)
+    for t in list(ai.same) + list(ai.same.values()) + list(ai.neg) + list(ai.neg.values()) \
+            + list(ai.failure) + list(ai.effect) + list(ai.review):
+        if t not in known and ai.canon(t) not in known:
+            mf.errs.append(f'[ai] の文言が理論に見当たりません（効いていない可能性があります）: {t}')
+    # same / neg は原子の文言で書く必要がある（変換の前に文言を置き換えるため）。別名（ラベルなど）は警告する
+    for t in list(ai.same) + list(ai.same.values()) + list(ai.neg) + list(ai.neg.values()):
+        if t in th.aliases and t not in th.atoms and not any(th.lit_text(abs(l)) == t for l in th.aliases[t]):
+            cands = ', '.join(f'"{th.by_id[abs(l)].text}"' for l in th.aliases[t])
+            mf.errs.append(f'[ai] same / neg の「{t}」は原子の文言ではなく別名です。原子の文言（候補: {cands}）で書いてください')
+    th.reviews = dict(ai.review)
+    th.name_atoms()
+    return th, diags
+
+
+def fmt_lits(th, ls):
+    return ', '.join(th.lit_str(l) for l in ls) if ls else '⊤'
+
+
+def render_generated(th, exts, pref, conflicting, diags):
+    out = [GEN_MARK]
+    unsolved = exts is None
+    out.append('[atoms]')
+    for a in sorted(th.atoms.values(), key=lambda a: a.id):
+        ln = ','.join(str(x) for x in a.lines)
+        out.append(f'{a.name:<6} {a.kind:<6} "{a.text}"' + (f'  ; {ln}' if ln else ''))
+    out.append('')
+    out.append('[W]')
+    out.append(fmt_lits(th, th.W))
+    out.append('')
+    out.append('[rules]')
+    for i, r in enumerate(th.rules, 1):
+        out.append(f'r{i}: {" & ".join(th.lit_str(b) for b in r.body)} -> {th.lit_str(r.head)}  ; {r.note}')
+    out.append('')
+    out.append('[defaults]')
+    for d in th.defaults.values():
+        out.append(f'{d.name}: {fmt_lits(th, d.pre)} : {fmt_lits(th, d.just)} / {fmt_lits(th, d.concl)}  ; {d.kind} {d.note}')
+    out.append('')
+    out.append('[priority]')
+    for a, b in sorted(th.priority):
+        out.append(f'{a} > {b}')
+    out.append('')
+    if unsolved:
+        out.append('[extensions]')
+        out.append('; まだ計算していない（mext.py solve で計算する）')
+        return '\n'.join(out) + '\n'
+    out.append('[extensions]')
+    out.append(f'; 衝突しうるデフォルト: {", ".join(d.name for d in conflicting) or "なし"}')
+    for i, (E, p) in enumerate(zip(exts, pref), 1):
+        tag = ' preferred' if p else ''
+        if E == INCONSISTENT:
+            out.append(f'E{i}{tag}: INCONSISTENT')
+            continue
+        out.append(f'E{i}{tag}:')
+        out.append(f'  generating: {", ".join(generating(th, E))}')
+        out.append(f'  literals: {fmt_lits(th, sorted(E, key=lambda l: (abs(l), l < 0)))}')
+    if not exts:
+        out.append('; Extension は存在しない')
+    out.append('')
+    out.append('[marks]')
+    for l, m, line, desc in th.marks:
+        res = []
+        for i, E in enumerate(exts, 1):
+            if E == INCONSISTENT:
+                res.append(f'E{i}:-')
+                continue
+            ok = (l in E) if m == '+' else (l not in E)
+            res.append(f'E{i}:{"一致" if ok else "不一致"}')
+        out.append(f'{m} {th.lit_str(l):<6} {line} {desc}  ; {" ".join(res)}')
+    out.append('')
+    out.append('[summary]')
+    sk, cr = summarize(th, exts, pref)
+    out.append(f'extensions: {len(exts)} (preferred: {sum(pref)})')
+    if sk is None:
+        out.append('skeptical: （Extension なし）')
+        out.append('credulous: （Extension なし）')
+    else:
+        key = [l for l in sorted(cr, key=abs) if th.by_id[abs(l)].kind in ('claim', 'concl')]
+        out.append('skeptical: ' + (', '.join(th.lit_str(l) for l in key if l in sk) or '（主張・結論はなし）'))
+        out.append('credulous: ' + (', '.join(th.lit_str(l) for l in key) or '（主張・結論はなし）'))
+    for n in th.notes:
+        out.append(f'; 注: {n}')
+    return '\n'.join(out) + '\n'
+
+
+def write_mext(mf, th, exts, pref, conflicting, diags):
+    head = '\n'.join(mf.header).rstrip()
+    parts = [head, '', '[ai]']
+    parts += [ln for _, ln in mf.ai_lines if ln.strip()] or ['; （AI の判断をここに書く）']
+    parts += ['', '[extra]']
+    parts += [ln for _, ln in mf.extra_lines if ln.strip()] or ['; （追加の事実・規則・デフォルト）']
+    parts += ['', '[claimed]']
+    parts += [ln for ln in mf.claimed_lines if ln.strip()] or \
+             ['; （検証したい Extension を 名前[*]: "文言", -"文言", !"文言" の形で書く。* は preferred）']
+    parts += ['', render_generated(th, exts, pref, conflicting, diags)]
+    with open(mf.path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(parts))
+
+
+# ---------------------------------------------------------------------------
+# コマンド
+# ---------------------------------------------------------------------------
+def cmd_init(args):
+    files = args.file
+    out = args.output or os.path.splitext(files[0])[0] + '.mext'
+    rels = [os.path.relpath(os.path.abspath(x), os.path.dirname(os.path.abspath(out))) for x in files]
+    with open(out, 'w', encoding='utf-8') as f:
+        f.write('@mext 1\n'
+                + ''.join(f'theory: {rel}\n' for rel in rels) +
+                '; MEXT: Matcha EXTension notation。書式は mext の docs/mext.md（スキルでは references/mext.md）を参照。\n\n'
+                '[ai]\n'
+                '; AI（または人）の判断。各行の ; 以降に理由を書く。\n'
+                ';   same "代表の文言" "同じ意味の文言"\n'
+                ';   neg  "文言A" "文言B"        … B は A の否定\n'
+                ';   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む\n'
+                ';   review "事実@評価" ok|doubtful|reject\n\n'
+                '[extra]\n'
+                ';   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2\n\n'
+                '[claimed]\n'
+                ';   E1*: "文言", -"文言"   … 検証したい Extension（* は preferred であることも主張）\n')
+    mf = MextFile(out).load()
+    if getattr(args, 'solve', False):
+        return _solve_write(mf, args)
+    th, diags = build(mf)
+    write_mext(mf, th, None, None, [], diags)
+    print(f'{mf.path}: ひな形を作りました（Extension はまだ計算していません。mext.py solve で計算）')
+    for e in mf.errs:
+        print('  注意: ' + e)
+    return 0
+
+
+def _solve_write(mf, args):
+    if getattr(args, 'no_review', False) and 'no-review' not in mf.options:
+        mf.options.add('no-review')
+        mf.header = [ln for ln in mf.header if not ln.startswith('options:')]
+        idx = next((i + 1 for i, ln in enumerate(mf.header) if ln.startswith('theory:')), len(mf.header))
+        mf.header.insert(idx, 'options: no-review   ; [ai] の review を反映しない（書かれたとおりの理論）')
+    th, diags = build(mf)
+    exts, pref, conflicting = solve(th)
+    write_mext(mf, th, exts, pref, conflicting, diags)
+    print(f'{mf.path}: Extension {len(exts)} 個' + (f'（preferred {sum(pref)} 個）' if th.priority else ''))
+    for e in mf.errs:
+        print('  注意: ' + e)
+    return th, exts, pref
+
+
+def cmd_solve(args):
+    mf = MextFile(args.file).load()
+    _solve_write(mf, args)
+    return 0
+
+
+def lit_from_text(th, s, errs=None):
+    """文言・別名・原子名からリテラルを得る。"-文言" "¬文言" "not 文言" は否定。見つからなければ None"""
+    s = s.strip()
+    neg = s.startswith('-') or s.startswith('¬') or s.startswith('not ')
+    if neg:
+        s = s[4:].strip() if s.startswith('not ') else s[1:].strip()
+    m = re.fullmatch(QSTR, s)
+    t = m.group(1) if m else s
+    if t in th.atoms:
+        l = th.atoms[t].id
+    elif t in getattr(th, 'by_name', {}):
+        l = th.by_name[t]
+    elif t in th.aliases and len(th.aliases[t]) == 1:
+        l = next(iter(th.aliases[t]))
+    else:
+        if errs is not None:
+            if t in th.aliases:
+                cands = ', '.join(f'"{th.lit_text(x)}"' for x in th.aliases[t])
+                errs.append(f'「{t}」は複数の原子を指しえます（{cands}）。原子の文言で指定してください')
+            else:
+                errs.append(f'「{t}」は理論にありません')
+        return None
+    return -l if neg else l
+
+
+def cmd_verify(args):
+    mf = MextFile(args.file).load()
+    th, _ = build(mf)
+    exts, pref, _ = solve(th)
+    if not mf.ext_claims:
+        print('[claimed] に検証対象の Extension がありません')
+        return 1
+    bad = 0
+    for name, claim_pref, items in mf.ext_claims:
+        errs, need, absent = [], [], []
+        for x in items:
+            x = x.strip()
+            if x.startswith('!'):
+                l = lit_from_text(th, x[1:], errs)
+                absent.append(l)
+            else:
+                l = lit_from_text(th, x, errs)
+                need.append(l)
+        if errs:
+            print(f'{name}: 文言を解決できません: ' + '; '.join(errs))
+            bad += 1
+            continue
+        match = [i for i, E in enumerate(exts) if E != INCONSISTENT
+                 and all(l in E for l in need) and all(l not in E for l in absent)]
+        what = 'preferred Extension' if claim_pref else 'Extension'
+        if claim_pref:
+            match = [i for i in match if pref[i]]
+        if getattr(args, 'skeptical', False):
+            pool = [i for i in range(len(exts)) if (pref[i] if claim_pref else True) and exts[i] != INCONSISTENT]
+            if pool and set(match) == set(pool):
+                print(f'{name}: OK（すべての{what}で成り立つ: E{", E".join(str(i + 1) for i in pool)}）')
+            else:
+                print(f'{name}: NG（成り立たない{what}がある。成り立つのは '
+                      + (f'E{", E".join(str(i + 1) for i in match)}' if match else 'なし') + '）')
+                bad += 1
+            continue
+        if match:
+            print(f'{name}: OK（主張されたリテラルを満たす{what}: E{", E".join(str(i + 1) for i in match)}）')
+        else:
+            print(f'{name}: NG（主張されたリテラルをすべて満たす{what}はない）')
+            bad += 1
+    return 1 if bad else 0
+
+
+def cmd_report(args):
+    mf = MextFile(args.file).load()
+    th, _ = build(mf)
+    exts, pref, conflicting = solve(th)
+    print(report_md(th, exts, pref, conflicting))
+    return 0
+
+
+def esc(s):
+    return s.replace('|', '\\|')
+
+
+def report_md(th, exts, pref, conflicting):
+    o = []
+    o.append('### 原子命題')
+    o.append('| 名前 | 種類 | 文言 | 行 |')
+    o.append('|---|---|---|---|')
+    for a in sorted(th.atoms.values(), key=lambda a: a.id):
+        o.append(f'| {a.name} | {a.kind} | {esc(a.text)} | {",".join(str(x) for x in a.lines)} |')
+    o.append('')
+    o.append('### デフォルト')
+    o.append('| 名前 | 前提 | 正当化 | 結論 | 種類 | 注 |')
+    o.append('|---|---|---|---|---|---|')
+    for d in th.defaults.values():
+        o.append(f'| {d.name} | {fmt_lits(th, d.pre)} | {fmt_lits(th, d.just)} | {fmt_lits(th, d.concl)} | {d.kind} | {esc(d.note)} |')
+    if th.priority:
+        o.append('')
+        o.append('優先順位（自動で付けたものを含む）: ' + ', '.join(f'{a} > {b}' for a, b in sorted(th.priority)))
+    o.append('')
+    if getattr(th, 'reviews', None):
+        o.append('### AI によるあてはめの審査（[ai] の review）')
+        o.append('| 対象 | 判定 | 理由 |')
+        o.append('|---|---|---|')
+        label = {'ok': 'ok', 'doubtful': '疑わしい', 'reject': '**棄却**'}
+        for t, (st, note) in th.reviews.items():
+            o.append(f'| {esc(t)} | {label[st]} | {esc(note)} |')
+        o.append('')
+    o.append('### Extension')
+    if not exts:
+        o.append('Extension は存在しない。')
+    for i, (E, p) in enumerate(zip(exts, pref), 1):
+        tag = '（preferred）' if p else '（preferred ではない）'
+        if E == INCONSISTENT:
+            o.append(f'- **E{i}**{tag}: 矛盾（全リテラル）')
+            continue
+        key = [l for l in sorted(E, key=abs) if th.by_id[abs(l)].kind in ('claim', 'concl')]
+        o.append(f'- **E{i}**{tag}: 生成デフォルト = {", ".join(generating(th, E))}')
+        for l in key:
+            o.append(f'  - {esc(th.lit_text(l))}')
+    o.append('')
+    if th.marks:
+        o.append('### 著者の成否（+ / !）との照合')
+        o.append('| 印 | 対象 | 行 | ' + ' | '.join(f'E{i}' for i in range(1, len(exts) + 1)) + ' |')
+        o.append('|---|---|---|' + '---|' * len(exts))
+        for l, m, line, desc in th.marks:
+            cells = []
+            for E in exts:
+                if E == INCONSISTENT:
+                    cells.append('-')
+                else:
+                    cells.append('一致' if ((l in E) if m == '+' else (l not in E)) else '**不一致**')
+            o.append(f'| {m} | {esc(desc)} | {line} | ' + ' | '.join(cells) + ' |')
+        o.append('')
+    sk, cr = summarize(th, exts, pref)
+    o.append('### 懐疑的帰結と信憑的帰結（preferred Extension について）')
+    if sk is None:
+        o.append('- Extension がないため、帰結は定まらない（理論が矛盾しているか、どのデフォルトの組も不動点にならない）')
+    else:
+        key = [l for l in sorted(cr, key=abs) if th.by_id[abs(l)].kind in ('claim', 'concl')]
+        o.append('- 懐疑的（すべての preferred Extension で成り立つ）: ' + ('、'.join(esc(th.lit_text(l)) for l in key if l in sk) or 'なし'))
+        o.append('- 信憑的（いずれかの preferred Extension で成り立つ）: ' + ('、'.join(esc(th.lit_text(l)) for l in key) or 'なし'))
+    for n in th.notes:
+        o.append(f'- 注: {n}')
+    return '\n'.join(o)
+
+
+def cmd_explain(args):
+    mf = MextFile(args.file).load()
+    th, _ = build(mf)
+    exts, pref, _ = solve(th)
+    idx = int(args.ext.lstrip('E')) - 1
+    if not 0 <= idx < len(exts):
+        print(f'Extension {args.ext} はありません（{len(exts)} 個）')
+        return 1
+    E = exts[idx]
+    errs = []
+    l = lit_from_text(th, args.literal, errs)
+    if l is None:
+        print('\n'.join(errs))
+        return 1
+    print('\n'.join(explain_lines(th, l, E, depth_limit=args.depth)))
+    return 0
+
+
+def supports(th, l, E):
+    """E の中で l を導く根拠をすべて挙げる（確定事実・規則・生成デフォルト）"""
+    out = []
+    if l in th.W:
+        out.append(('W', None))
+    for i, r in enumerate(th.rules):
+        if r.head == l and all(b in E for b in r.body):
+            out.append(('rule', i))
+    gd = set(generating(th, E))
+    for d in th.defaults.values():
+        if d.name in gd and l in d.concl:
+            out.append(('default', d.name))
+    return out
+
+
+def explain_lines(th, l, E, depth=0, seen=None, depth_limit=8):
+    """l が E に含まれるならその導出（すべての根拠）を、含まれないなら含まれない理由をたどる"""
+    seen = set() if seen is None else seen
+    pad = '  ' * depth
+    head = f'{pad}{th.lit_str(l)} 「{th.lit_text(l)}」'
+    if E == INCONSISTENT:
+        return [head + ' … Extension が矛盾（全リテラル）なので自明に含まれる']
+    if depth > depth_limit:
+        return [head + ' …（深さの上限）']
+    if l in seen:
+        return [head + ' …（上に既出）']
+    seen.add(l)
+    out = []
+    if l in E:
+        sups = supports(th, l, E)
+        # 根拠が他のリテラルを経由しない順（W を先頭）に並べる
+        for k, (kind, ref) in enumerate(sups):
+            tag = '' if len(sups) == 1 else f'［根拠 {k + 1}/{len(sups)}］'
+            if kind == 'W':
+                out.append(f'{head} ← 確定事実 W {tag}')
+            elif kind == 'rule':
+                r = th.rules[ref]
+                out.append(f'{head} ← 規則 r{ref + 1}（{r.note}）{tag}')
+                for b in r.body:
+                    out += explain_lines(th, b, E, depth + 1, seen, depth_limit)
+            else:
+                d = th.defaults[ref]
+                js = ', '.join(th.lit_str(j) for j in d.just)
+                out.append(f'{head} ← デフォルト {d.name}（{d.note}。正当化 {js} は E と無矛盾）{tag}')
+                for p in d.pre:
+                    out += explain_lines(th, p, E, depth + 1, seen, depth_limit)
+                if d.kind == 'failure':
+                    # 不成立からの結論: 主張 k が E に含まれない理由もたどる
+                    for j in d.just:
+                        if j < 0 and th.by_id[-j].kind in ('claim', 'req', 'issue', 'aux') and -j not in E:
+                            out.append(f'{pad}  （主張が成り立たない理由）')
+                            out += explain_lines(th, -j, E, depth + 2, seen, depth_limit)
+        return out
+    # --- 含まれない理由
+    out.append(head + ' はこの Extension に含まれない')
+    if -l in E:
+        out.append(f'{pad}  理由: 否定 {th.lit_str(-l)} 「{th.lit_text(-l)}」 が成り立つ')
+        out += explain_lines(th, -l, E, depth + 2, seen, depth_limit)
+        return out
+    cands = 0
+    for i, r in enumerate(th.rules):
+        if r.head == l:
+            cands += 1
+            miss = [b for b in r.body if b not in E]
+            out.append(f'{pad}  規則 r{i + 1}（{r.note}）は前提 {", ".join(th.lit_str(b) for b in miss)} を欠く')
+            for b in miss:
+                out += explain_lines(th, b, E, depth + 2, seen, depth_limit)
+    for d in th.defaults.values():
+        if l in d.concl:
+            cands += 1
+            miss = [p for p in d.pre if p not in E]
+            blocked = [j for j in d.just if -j in E]
+            if miss:
+                out.append(f'{pad}  デフォルト {d.name}（{d.note}）は前提 {", ".join(th.lit_str(p) for p in miss)} を欠く')
+                for p in miss:
+                    out += explain_lines(th, p, E, depth + 2, seen, depth_limit)
+            if blocked:
+                out.append(f'{pad}  デフォルト {d.name}（{d.note}）は' + ('さらに' if miss else '') + '正当化 '
+                           + ', '.join(th.lit_str(j) for j in blocked) + ' が E と矛盾するため働かない')
+                for j in blocked:
+                    out += explain_lines(th, -j, E, depth + 2, seen, depth_limit)
+    if cands == 0:
+        if abs(l) in th.rejected:
+            out.append(f'{pad}  この評価のデフォルトは [ai] の review で棄却された（reject）ため、導かれない')
+        else:
+            out.append(f'{pad}  これを導く規則・デフォルトがない（あてはめる事実が書かれていない）')
+    return out
+
+
+def cmd_lean(args):
+    mf = MextFile(args.file).load()
+    th, _ = build(mf)
+    exts, pref, _ = solve(th)
+    ns = args.namespace or re.sub(r'\W', '_', os.path.splitext(os.path.basename(args.file))[0]).capitalize()
+    src = lean_source(th, exts, ns, os.path.basename(args.file), import_spec=args.import_spec)
+    out = args.output or os.path.splitext(args.file)[0] + '.lean'
+    with open(out, 'w', encoding='utf-8') as f:
+        f.write(src)
+    print(f'{out} を書き出しました')
+    return 0
+
+
+LEAN_PRELUDE = '''/-
+  MEXT の Extension 検証（mext.py が自動生成）
+  リテラルは整数で表す: 原子 i は i、その否定は -i。
+  Γ(E) を有限回の反復で計算し、Γ(E) = E を decide +kernel（カーネルでの評価）で確かめる。
+-/
+namespace Mext
+
+structure Dflt where
+  pre : List Int
+  just : List Int
+  concl : List Int
+deriving Repr
+
+structure Theory where
+  W : List Int
+  rules : List (List Int × Int)
+  defaults : List Dflt
+
+def subsetL (a b : List Int) : Bool := a.all (fun x => b.contains x)
+
+def sameSet (a b : List Int) : Bool := subsetL a b && subsetL b a
+
+def consistentL (S : List Int) : Bool := S.all (fun x => !S.contains (-x))
+
+/-- E に照らして正当化が無矛盾なデフォルト -/
+def okDefaults (T : Theory) (E : List Int) : List Dflt :=
+  T.defaults.filter (fun d => d.just.all (fun j => !E.contains (-j)))
+
+/-- 1 ステップ: 規則と（前提が満たされた）デフォルトの結論を加える -/
+def step (T : Theory) (ds : List Dflt) (S : List Int) : List Int :=
+  let fromRules := (T.rules.filter (fun r => subsetL r.1 S)).map (fun r => r.2)
+  let fromDefs := ((ds.filter (fun d => subsetL d.pre S)).map (fun d => d.concl)).flatten
+  (S ++ fromRules ++ fromDefs).eraseDups
+
+def iter (T : Theory) (ds : List Dflt) : Nat → List Int → List Int
+  | 0, S => S
+  | n + 1, S => iter T ds n (step T ds S)
+
+/-- Γ(E)（反復回数は規則とデフォルトの数 + 1 で十分） -/
+def gamma (T : Theory) (E : List Int) : List Int :=
+  iter T (okDefaults T E) (T.rules.length + T.defaults.length + 1) T.W
+
+/-- E は Extension か（無矛盾で、Γ(E) = E） -/
+def isExtension (T : Theory) (E : List Int) : Bool :=
+  consistentL E && sameSet (gamma T E) E
+
+end Mext
+'''
+
+
+def lean_source(th, exts, ns, fname, import_spec=False):
+    def ll(ls):
+        return '[' + ', '.join(str(x) for x in ls) + ']'
+    head = (f'import {import_spec}\n\n/- MEXT の Extension 検証（mext.py が自動生成）。検査器と健全性定理は '
+            f'{import_spec} にある。 -/\n') if import_spec else LEAN_PRELUDE
+    lines = [head, f'namespace Mext.{ns}', '', f'/-! {fname} の原子命題']
+    for a in sorted(th.atoms.values(), key=lambda a: a.id):
+        lines.append(f'  {a.id} = {a.name}: {a.text.replace("-/", "- /")}')
+    lines.append('-/')
+    lines.append('')
+    lines.append('def T : Mext.Theory where')
+    lines.append(f'  W := {ll(th.W)}')
+    lines.append('  rules := [' + ', '.join(f'({ll(r.body)}, {r.head})' for r in th.rules) + ']')
+    lines.append('  defaults := [')
+    ds = list(th.defaults.values())
+    for i, d in enumerate(ds):
+        sep = ',' if i < len(ds) - 1 else ''
+        lines.append(f'    ⟨{ll(d.pre)}, {ll(d.just)}, {ll(d.concl)}⟩{sep}  -- {d.name}')
+    lines.append('  ]')
+    lines.append('')
+    for i, E in enumerate(exts, 1):
+        if E == INCONSISTENT:
+            lines.append(f'-- E{i} は矛盾した Extension（省略）')
+            continue
+        lst = sorted(E, key=lambda l: (abs(l), l < 0))
+        lines.append(f'def E{i} : List Int := {ll(lst)}')
+        lines.append(f'theorem E{i}_isExtension : Mext.isExtension T E{i} = true := by decide +kernel')
+        if import_spec:
+            lines.append(f'/-- E{i} は Reiter の Extension である（健全性定理による） -/')
+            lines.append(f'theorem E{i}_reiter : Mext.ReiterExtension T E{i} := Mext.isExtension_sound T E{i} E{i}_isExtension')
+        lines.append('')
+    lines.append(f'end Mext.{ns}')
+    return '\n'.join(lines) + '\n'
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description='Matcha(-D) → デフォルト理論 → Extension')
+    sub = ap.add_subparsers(dest='cmd', required=True)
+    p = sub.add_parser('init')
+    p.add_argument('file', nargs='+', help='Matcha ファイル（複数なら一つの理論としてまとめる）')
+    p.add_argument('-o', '--output')
+    p.add_argument('--solve', action='store_true', help='ひな形を作った後に Extension も計算する')
+    p.add_argument('--no-review', action='store_true')
+    p = sub.add_parser('solve')
+    p.add_argument('file')
+    p.add_argument('--no-review', action='store_true', help='[ai] の review 指示を無視する（書かれたとおりの理論）')
+    p = sub.add_parser('verify')
+    p.add_argument('file')
+    p.add_argument('--skeptical', action='store_true',
+                   help='主張がいずれかの Extension で成り立つ（信憑的）ではなく、すべてで成り立つ（懐疑的）ことを検証する')
+    p = sub.add_parser('report')
+    p.add_argument('file')
+    p = sub.add_parser('explain')
+    p.add_argument('file')
+    p.add_argument('ext')
+    p.add_argument('literal')
+    p.add_argument('--depth', type=int, default=8, help='たどる深さの上限')
+    p = sub.add_parser('lean')
+    p.add_argument('file')
+    p.add_argument('--import-spec', nargs='?', const='MextSpec', default=None, metavar='MODULE',
+                   help='検査器を自前で定義せず、健全性定理のある Lean モジュール（既定 MextSpec。'
+                        'lean/MextSpec.lean）を import し、ReiterExtension も示す')
+    p.add_argument('-o', '--output')
+    p.add_argument('--namespace')
+    args = ap.parse_args(argv)
+    f = {'init': cmd_init, 'solve': cmd_solve, 'verify': cmd_verify, 'report': cmd_report,
+         'explain': cmd_explain, 'lean': cmd_lean}[args.cmd]
+    r = f(args)
+    return r if isinstance(r, int) else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

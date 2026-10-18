@@ -1,0 +1,60 @@
+@mext 1
+theory: nixon.matcha
+; MEXT: Matcha EXTension notation（本レポートの考案）。書式は docs/mext.md を参照。
+
+[ai]
+; AI（または人）の判断。各行の ; 以降に理由を書く。
+;   same "代表の文言" "同じ意味の文言"
+;   neg  "文言A" "文言B"        … B は A の否定
+;   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む
+;   review "事実@評価" ok|doubtful|reject
+
+[extra]
+;   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2
+
+[claimed]
+; （検証したい Extension を 名前[*]: "文言", -"文言", ... の形で書く。* は preferred）
+
+; ===== ここから下は mext.py が自動生成（手で直さない） =====
+[atoms]
+k1     claim  "#平和主義^クエーカー教徒の通念 [クエーカー]"  ; L2
+f1     fact   "ニクソン"  ; L2,L6
+r1     req    "クエーカー／%クエーカー教徒である"  ; L3
+f2     fact   "ニクソンはクエーカー教徒である"  ; L3
+c1     concl  "ニクソンは平和主義者である〔ニクソン〕"  ; L4,L8
+k2     claim  "#非平和主義^共和党員の通念 [共和党]"  ; L6
+r2     req    "共和党／%共和党員である"  ; L7
+f3     fact   "ニクソンは共和党員である"  ; L7
+
+[W]
+f1, f2, f3
+
+[rules]
+r1: f2 -> r1  ; L3 %クエーカー教徒である
+r2: -f2 -> -r1  ; L3 %クエーカー教徒である（必要条件の否定）
+r3: -r1 -> -k1  ; L2 要件の否定による主張 クエーカー の不成立
+r4: f3 -> r2  ; L7 %共和党員である
+r5: -f3 -> -r2  ; L7 %共和党員である（必要条件の否定）
+r6: -r2 -> -k2  ; L6 要件の否定による主張 共和党 の不成立
+
+[defaults]
+クエーカー: f1, r1 : k1, c1 / k1, c1  ; claim L2 主張 ^クエーカー教徒の通念
+共和党: f1, r2 : k2, -c1 / k2, -c1  ; claim L6 主張 ^共和党員の通念
+
+[priority]
+
+[extensions]
+; 衝突しうるデフォルト: クエーカー, 共和党
+E1 preferred:
+  generating: クエーカー
+  literals: k1, f1, r1, f2, c1, r2, f3
+E2 preferred:
+  generating: 共和党
+  literals: f1, r1, f2, -c1, k2, r2, f3
+
+[marks]
+
+[summary]
+extensions: 2 (preferred: 2)
+skeptical: （主張・結論はなし）
+credulous: k1, c1, -c1, k2

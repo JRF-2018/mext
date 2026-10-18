@@ -1,0 +1,45 @@
+{
+  "_comment": "ここに無いファイルはエラー 0・警告 0 を期待する。note は期待の理由。",
+  "tests/corpus/hacking_kant.matcha": {
+    "error": 0,
+    "warning": 1,
+    "note": "「? 天才とは =>」の規範が次行に同じ深さで書かれている（原典の書き方）"
+  },
+  "tests/corpus/hacking_protocolart.matcha": {
+    "error": 0,
+    "warning": 1,
+    "note": "「~>」の理由が次行に同じ深さで書かれている（原典の書き方）"
+  },
+  "tests/corpus/hanafusa_p4_04.matcha": {
+    "error": 1,
+    "warning": 0,
+    "note": "記事中の断片（: の後が省略されている）"
+  },
+  "tests/corpus/hanafusa_p5_14.matcha": {
+    "error": 0,
+    "warning": 1,
+    "note": "原典の +#時効取得 の下に !「二十年間」があり、結論も「時効取得できない」。+ は ! の誤記と思われる"
+  },
+  "tests/corpus_neg/broken_paren.matcha": {
+    "error": 3,
+    "warning": 0
+  },
+  "tests/corpus_neg/gemini_01.matcha": {
+    "error": 3,
+    "warning": 1,
+    "note": "「」を区切りなしで並べている。AND/NOT は Matcha の演算子ではない"
+  },
+  "tests/corpus_neg/mixed_andor.matcha": {
+    "error": 1,
+    "warning": 0
+  },
+  "tests/corpus_neg/matchad_bad_labels.matcha": {
+    "error": 4,
+    "warning": 0
+  },
+  "tests/corpus_neg/empty_group.matcha": {
+    "error": 0,
+    "warning": 1,
+    "note": "中身のない ( )（試験者の指摘）"
+  }
+}
