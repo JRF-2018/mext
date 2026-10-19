@@ -1,0 +1,78 @@
+@mext 1
+theory: chain.matcha
+; MEXT: Matcha EXTension notation。書式は mext の docs/mext.md（スキルでは references/mext.md）を参照。
+
+[ai]
+; AI（または人）の判断。各行の ; 以降に理由を書く。
+;   same "代表の文言" "同じ意味の文言"
+;   neg  "文言A" "文言B"        … B は A の否定
+;   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む
+;   review "事実@評価" ok|doubtful|reject
+
+[extra]
+;   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2
+
+[claimed]
+;   E1*: "文言", -"文言"   … 検証したい Extension（* は preferred であることも主張）
+
+; ===== ここから下は mext.py が自動生成（手で直さない） =====
+[atoms]
+k1     claim  "#解雇の無効^労働契約法16条 [解雇無効]"  ; L2
+f1     fact   "本件解雇"  ; L2
+r1     req    "解雇無効／「客観的に合理的な理由を欠き」"  ; L3
+f2     fact   "遅刻は半年で2回だけである"  ; L3
+v1     eval   "遅刻は半年で2回だけである@合理的な理由を欠く"  ; L3
+r2     req    "解雇無効／「社会通念上相当であると認められない」"  ; L4
+f3     fact   "注意も指導もなく即日解雇した"  ; L4
+v2     eval   "注意も指導もなく即日解雇した@相当性を欠く"  ; L4
+x1     aux    "（L2 の AND・2項・1）"  ; L2
+c1     concl  "本件解雇は無効である〔本件解雇〕"  ; L5
+k2     claim  "#賃金の請求^民法536条2項 [賃金請求]"  ; L7
+f4     fact   "解雇後の期間"  ; L7
+r3     req    "賃金請求／$解雇無効"  ; L8
+r4     req    "賃金請求／%労働者が就労の意思を示している"  ; L9
+f5     fact   "Xは復職を求め続けた"  ; L9
+x2     aux    "（L7 の AND・2項・1）"  ; L7
+c2     concl  "YはXに解雇後の賃金を支払わなければならない〔解雇後の期間〕"  ; L10
+
+[W]
+f1, f2, f3, f4, f5
+
+[rules]
+r1: v1 -> r1  ; L3 「客観的に合理的な理由を欠き」
+r2: -v1 -> -r1  ; L3 「客観的に合理的な理由を欠き」（必要条件の否定）
+r3: v2 -> r2  ; L4 「社会通念上相当であると認められない」
+r4: -v2 -> -r2  ; L4 「社会通念上相当であると認められない」（必要条件の否定）
+r5: r1 & r2 -> x1  ; AND
+r6: -r1 -> -x1  ; AND（必要条件の否定）
+r7: -r2 -> -x1  ; AND（必要条件の否定）
+r8: -x1 -> -k1  ; L2 要件の否定による主張 解雇無効 の不成立
+r9: f5 -> r4  ; L9 %労働者が就労の意思を示している
+r10: -f5 -> -r4  ; L9 %労働者が就労の意思を示している（必要条件の否定）
+r11: r3 & r4 -> x2  ; AND
+r12: -r3 -> -x2  ; AND（必要条件の否定）
+r13: -r4 -> -x2  ; AND（必要条件の否定）
+r14: -x2 -> -k2  ; L7 要件の否定による主張 賃金請求 の不成立
+r15: k1 -> r3  ; L8 $解雇無効 の参照
+r16: -k1 -> -r3  ; L8 $解雇無効 の参照（必要条件の否定）
+
+[defaults]
+e1: f2 : v1, r1 / v1  ; eval L3 評価 @合理的な理由を欠く
+e2: f3 : v2, r2 / v2  ; eval L4 評価 @相当性を欠く
+解雇無効: f1, x1 : k1, c1 / k1, c1  ; claim L2 主張 ^労働契約法16条
+賃金請求: f4, x2 : k2, c2 / k2, c2  ; claim L7 主張 ^民法536条2項
+
+[priority]
+
+[extensions]
+; 衝突しうるデフォルト: なし
+E1 preferred:
+  generating: e1, e2, 解雇無効, 賃金請求
+  literals: k1, f1, r1, f2, v1, r2, f3, v2, x1, c1, k2, f4, r3, r4, f5, x2, c2
+
+[marks]
+
+[summary]
+extensions: 1 (preferred: 1)
+skeptical: k1, c1, k2, c2
+credulous: k1, c1, k2, c2

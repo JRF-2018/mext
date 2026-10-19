@@ -16,6 +16,7 @@ CASES = [
     ('theft.mext', 1, None, ['甲に窃盗罪が成立する'], []),
     ('theft_fail.mext', 1, None, ['甲に窃盗罪は成立しない'], ['甲に窃盗罪が成立する']),
     ('self_defense.mext', 2, 1, ['¬甲に傷害罪が成立する'], ['甲に傷害罪が成立する']),
+    ('chain.mext', 1, None, ['YはXに解雇後の賃金を支払わなければならない'], []),
 ]
 fail = 0
 for fn, n_ext, n_pref, must, mustnot in CASES:

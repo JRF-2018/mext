@@ -1,0 +1,30 @@
+文書は約650字で主な結論が一つなので、聞かずに「標準」の長さで分析しました。
+
+## 0. 結論
+
+- **(a) 形式的には導けます。** 主な結論「事務職はリモートワークを原則とし、出社は理由を示した例外とすべきである」は、ただ一つの Extension E1 に含まれます。E1 は preferred で、結論は懐疑的帰結でもあります。`[claimed]` の予測は `verify` と `verify --skeptical` の両方で当たり、Lean の証明もエラーなく通りました。
+- **(b) 実質的な説得力は弱いです。** 結論を支える三つの根拠（生産性・人材・費用）のあてはめは、三つとも doubtful（争いうる）と判断しました。
+  - 「以上から」を AND（三つとも必要）で読むと、一つを退けるだけで結論は消えます（試算 `alt-productivity-reject`）。
+  - OR（どれか一つで足りる）で読めば、結論は残ります（試算 `alt-or`）。
+  - いちばん弱いのは二点です。「6割が下がらなかった」を「生産性は下がらない」と一般化している点と、「毎日の出社」を「出社を原則にすること」にすり替えている点です。
+- **(c) 反論への応答は、形式上は結論を支えていません。**
+  - 二つの反論（出社に意味がある場面、一体感）が退けられるのは、反論する側が事実を示していないから（立証責任）です。文書の再反論が強いからではありません。
+  - 実際、再反論の評価を退けても、結果は何も変わりません（試算 `alt-rebuttal-reject`）。
+  - 逆に、一体感が失われることを事実で示されると、preferred Extension から主な結論は消えます（試算 `alt-cohesion`）。
+- 結論は、**三つの根拠の結び方（AND か OR か）**と、**立証責任を反論の側に置くこと**に依存しています。
+
+書き起こしと審査を同じ AI がしているので、自分の読みに甘くなっている可能性があります。`remote_work_op.matcha` を別の AI か人に見てもらうことをお勧めします。
+
+道具の不具合を一つ見つけ、レポート末尾の「道具について」に書きました。`(A & B)@評価` の形の評価は、原子の文言に行番号が入ります。そのため `.matcha` を編集すると、`[ai]` の審査が効かなくなります。試算の `alt-or` で実際に起き、行番号を手で直して回避しました。
+
+## ファイル
+
+すべて `tests/analysis_runs2/remote_work_op/` にあります。
+- `remote_work_op.mext-analysis.md` — **最終レポート**
+- `remote_work_op.matcha` — 書き起こし
+- `remote_work_op.matcha.md` — 書き起こしのメモ（対応表・補った前提・落としたもの）
+- `remote_work_op.mext` — デフォルト理論と Extension（`[ai]` に審査）
+- `remote_work_op.alt-productivity-reject.mext`、`remote_work_op.alt-or.matcha`、`remote_work_op.alt-or.mext`、`remote_work_op.alt-rebuttal-reject.mext`、`remote_work_op.alt-cohesion.mext` — 試算
+- `remote_work_op.lean` — E1 の Lean 証明
+
+`reject` がないので、審査を反映しない版（`asis`）は本体と同じになり、作っていません。

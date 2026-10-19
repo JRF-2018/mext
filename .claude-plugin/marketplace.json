@@ -8,7 +8,7 @@
     {
       "name": "mext",
       "source": "./",
-      "description": "Matcha の論証をデフォルト論理として検査するスキル matcha-default-extensions"
+      "description": "Matcha の論証をデフォルト論理として検査するスキル集（mext-analysis、matcha-analysis、matcha-default-extensions）"
     }
   ]
 }

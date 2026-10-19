@@ -241,6 +241,8 @@ class Compiler:
         self.n_eval = 0
         self.n_reason = 0
         self.pending_ab = []
+        self.pending_refs = []    # 要件として書かれた $ラベル（参照先は後で定義されることがある）
+        self.texts = set()        # 変換の前の原子の文言（same / neg で合併・否定された側も含む）
         self.claim_keys = set()
 
     def loc(self, line):
@@ -254,6 +256,7 @@ class Compiler:
     # --- 文言から原子・リテラルへ（AI の same / neg を反映し、元の文言を別名として登録）
     def lit(self, kind, text, line=0, aliases=()):
         orig = text
+        self.texts.add(orig)
         text = self.ai.canon(text)
         if text in self.ai.neg:
             base = self.ai.canon(self.ai.neg[text])
@@ -293,6 +296,13 @@ class Compiler:
         return self.finish()
 
     def finish(self):
+        # 要件の位置の $ラベル が主張を指すときは、その主張と必要十分に結ぶ（主張の連鎖）: 主張 → 要件、¬主張 → ¬要件。
+        # 規範・定義を指すとき（原典の `=> %規範 as 名前` … `$名前 <= 別の事実`）は、規範を別の事実に使い回す
+        # 意味なので結ばない（参照先のあてはめの結果を持ち込まない）
+        for r, label, line in self.pending_refs:
+            t = self.th.labels.get(label)
+            if t is not None and t != r and self.th.by_id[abs(t)].kind == 'claim':
+                self.define(r, [t], line, f'{self.loc(line)} ${label} の参照')
         for hi, lo in self.pending_ab:
             if hi not in self.th.defaults or lo not in self.th.defaults:
                 continue
@@ -424,6 +434,8 @@ class Compiler:
         if n.label:
             self.th.labels[n.label] = r
             self.th.alias(n.label, r)
+        if n.kind == 'ref':
+            self.pending_refs.append((r, n.head, n.line))
         m = n.mark or inherited
         note = f'{self.loc(n.line)} {text}' + (f' ^{n.basis}' if n.basis else '')
         parts = []
@@ -511,7 +523,10 @@ class Compiler:
             lits = [l for l in lits if l]
             g = self.aux(n.op, lits, n.line) if lits else None
             if g and n.eval:
-                return self.evaluate(g, f'（{self.loc(n.line)} の事実群）', n.eval, n.line, target)
+                # 原子の文言は事実の中身から作る（.matcha を編集しても [ai] の review が外れないように）。
+                # 以前の行番号つきの文言（（L7 の事実群）@評価）も別名として引ける
+                return self.evaluate(g, f'（{self.fact_text(n)}）', n.eval, n.line, target,
+                                     old=f'（{self.loc(n.line)} の事実群）')
             return g
         if n.kind == 'fact':
             f = self.lit('fact', n.head, n.line)
@@ -524,14 +539,15 @@ class Compiler:
             return f
         return self.elem(n, '')
 
-    def evaluate(self, l, ftext, ev, line, target):
+    def evaluate(self, l, ftext, ev, line, target, old=None):
         """事実@評価 … 評価は争いうるあてはめなので、デフォルト  事実 : v, 目標 / v  にする。
         目標（あてはめ先の要件、または不成立の要件の否定）が否定されていれば評価は働かない。"""
         vtext = f'{ftext}@{ev}'
-        v = self.lit('eval', vtext, line)
+        otext = f'{old}@{ev}' if old else None
+        v = self.lit('eval', vtext, line, aliases=(otext,) if otext else ())
         self.n_eval += 1
         name = f'e{self.n_eval}'
-        status = self.ai.review.get(vtext, ('ok', ''))[0]
+        status = (self.ai.review.get(vtext) or (self.ai.review.get(otext) if otext else None) or ('ok', ''))[0]
         if status == 'reject':
             self.th.notes.append(f'{name}（{self.loc(line)} 評価 @{ev}）は AI の審査で棄却された')
             self.th.rejected.add(v)
@@ -887,7 +903,7 @@ def build(mf, use_review=None):
             mf.errs.append(f'[ai] の文言が理論に見当たりません（効いていない可能性があります）: {t}')
     # same / neg は原子の文言で書く必要がある（変換の前に文言を置き換えるため）。別名（ラベルなど）は警告する
     for t in list(ai.same) + list(ai.same.values()) + list(ai.neg) + list(ai.neg.values()):
-        if t in th.aliases and t not in th.atoms and not any(th.lit_text(abs(l)) == t for l in th.aliases[t]):
+        if t in th.aliases and t not in th.atoms and t not in comp.texts and not any(th.lit_text(abs(l)) == t for l in th.aliases[t]):
             cands = ', '.join(f'"{th.by_id[abs(l)].text}"' for l in th.aliases[t])
             mf.errs.append(f'[ai] same / neg の「{t}」は原子の文言ではなく別名です。原子の文言（候補: {cands}）で書いてください')
     th.reviews = dict(ai.review)
