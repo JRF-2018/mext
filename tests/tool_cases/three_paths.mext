@@ -1,0 +1,71 @@
+@mext 1
+theory: three_paths.matcha
+; MEXT: Matcha EXTension notation。書式は mext の docs/mext.md（スキルでは references/mext.md）を参照。
+
+[ai]
+; AI（または人）の判断。各行の ; 以降に理由を書く。
+;   same "代表の文言" "同じ意味の文言"
+;   neg  "文言A" "文言B"        … B は A の否定
+;   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む
+;   review "事実@評価" ok|doubtful|reject
+
+[extra]
+;   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2
+
+[claimed]
+;   E1*: "文言", -"文言"   … 検証したい Extension（* は preferred であることも主張）
+
+; ===== ここから下は mext.py が自動生成（手で直さない） =====
+[atoms]
+k1     claim  "#理由A^原理A [A]"  ; L2
+f1     fact   "本件"  ; L2,L5,L8
+r1     req    "A／%Aの要件"  ; L3
+f2     fact   "事実A"  ; L3
+v1     eval   "事実A@Aにあたる"  ; L3
+c1     concl  "結論が成り立つ〔本件〕"  ; L4,L7,L10
+k2     claim  "#理由B^原理B [B]"  ; L5
+r2     req    "B／%Bの要件"  ; L6
+f3     fact   "事実B"  ; L6
+v2     eval   "事実B@Bにあたる"  ; L6
+k3     claim  "#理由C^原理C [C]"  ; L8
+r3     req    "C／%Cの要件"  ; L9
+f4     fact   "事実C"  ; L9
+v3     eval   "事実C@Cにあたる"  ; L9
+
+[W]
+f1, f2, f3, f4
+
+[rules]
+r1: v1 -> r1  ; L3 %Aの要件
+r2: -v1 -> -r1  ; L3 %Aの要件（必要条件の否定）
+r3: -r1 -> -k1  ; L2 要件の否定による主張 A の不成立
+r4: v2 -> r2  ; L6 %Bの要件
+r5: -v2 -> -r2  ; L6 %Bの要件（必要条件の否定）
+r6: -r2 -> -k2  ; L5 要件の否定による主張 B の不成立
+r7: v3 -> r3  ; L9 %Cの要件
+r8: -v3 -> -r3  ; L9 %Cの要件（必要条件の否定）
+r9: -r3 -> -k3  ; L8 要件の否定による主張 C の不成立
+
+[defaults]
+e1: f2 : v1, r1 / v1  ; eval L3 評価 @Aにあたる
+A: f1, r1 : k1, c1 / k1, c1  ; claim L2 主張 ^原理A
+e2: f3 : v2, r2 / v2  ; eval L6 評価 @Bにあたる
+B: f1, r2 : k2, c1 / k2, c1  ; claim L5 主張 ^原理B
+e3: f4 : v3, r3 / v3  ; eval L9 評価 @Cにあたる
+C: f1, r3 : k3, c1 / k3, c1  ; claim L8 主張 ^原理C
+
+[priority]
+
+[extensions]
+; 衝突しうるデフォルト: なし
+E1 preferred:
+  generating: e1, A, e2, B, e3, C
+  literals: k1, f1, r1, f2, v1, c1, k2, r2, f3, v2, k3, r3, f4, v3
+
+[marks]
+
+[summary]
+extensions: 1 (preferred: 1)
+skeptical: k1, c1, k2, k3
+credulous: k1, c1, k2, k3
+; 検証の範囲: 評価 3 個（未審査 3・ok 0・doubtful 0・reject 0。doubtful と未審査の評価も推論を止めない）。最終的な結論 1 個のうち、成り立つもの 1 個、理論の中に対立する命題（否定）がないもの 1 個（これらは、反対の根拠に勝ったのではなく、反対の根拠が書かれていないだけである）。

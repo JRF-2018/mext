@@ -42,6 +42,25 @@ l0 = core.lit_from_text(th, '本件解雇は無効である')
 check('sensitivity: 連鎖の後の結論は前の主張の前提にも依存する',
       set(res['per'][l0]['singles']) < set(res['per'][l]['singles']))
 
+th = theory(os.path.join(TC, 'three_paths.mext'))
+res = analysis.sensitivity(th)
+l = core.lit_from_text(th, '結論が成り立つ')
+p = res['per'][l]
+check('sensitivity: 三つの独立した経路は大きさ 3 の組で初めて結論を消す（auto で見つかる）',
+      not p['singles'] and p['groups'] and all(len(g) == 3 for g in p['groups']) and len(p['groups']) == 8, str(p['groups']))
+check('sensitivity: 独立した経路を積の形でまとめる', analysis.fmt_groups(p).startswith('独立した 3 つの経路'), analysis.fmt_groups(p))
+res2 = analysis.sensitivity(th, size=2)
+check('sensitivity: --size 2 では見つからない（調べた範囲の明記が必要な場合）', not res2['per'][l]['groups'])
+
+# --- 検証の範囲
+exts, pref, _ = core.solve(th)
+sc = core.scope(th, exts, pref)
+check('scope: 対立する命題のない最終的な結論を数える', len(sc['finals']) == 1 and len(sc['unopposed']) == 1, str(sc))
+th = theory(os.path.join(EX, 'tweety.mext'))
+exts, pref, _ = core.solve(th)
+sc = core.scope(th, exts, pref)
+check('scope: 例外のある結論は対立する命題を持つ', not sc['unopposed'], str(sc))
+
 # --- lint
 mf, th, _ = analysis.load(os.path.join(TC, 'coarse.mext'))
 exts, pref, _ = core.solve(th)

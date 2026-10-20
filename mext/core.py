@@ -787,6 +787,51 @@ def solve(th):
     return exts, pref, conflicting
 
 
+def final_conclusions(th):
+    """最終的な結論: 主張の結論で、その結論も主張自体も、ほかのデフォルトや規則の前提に使われていないもの"""
+    used = set()
+    for d in th.defaults.values():
+        used |= {abs(x) for x in d.pre}
+    for r in th.rules:
+        used |= {abs(x) for x in r.body}
+    out = []
+    for d in th.defaults.values():
+        if d.kind == 'claim' and len(d.concl) > 1:
+            k, c = d.concl[0], d.concl[1]
+            if abs(c) not in used and abs(k) not in used and c not in out:
+                out.append(c)
+    return out
+
+
+def opposed(th, l):
+    """理論の中に l と対立する命題（¬l を結論とするデフォルトか規則）があるか"""
+    return any(-l in d.concl for d in th.defaults.values()) or any(r.head == -l for r in th.rules)
+
+
+def scope(th, exts, pref):
+    """検証の範囲: 結果の見栄えが、実際に検証した範囲より強く見えないようにするための数"""
+    st = list(getattr(th, 'eval_status', {}).values())
+    sk, _ = summarize(th, exts, pref)
+    finals = final_conclusions(th)
+    return {'evals': len(st), 'unreviewed': sum(1 for x in st if x is None), 'ok': st.count('ok'),
+            'doubtful': st.count('doubtful'), 'reject': st.count('reject'),
+            'finals': finals, 'finals_hold': [l for l in finals if sk and l in sk],
+            'unopposed': [l for l in finals if not opposed(th, l)]}
+
+
+def scope_text(th, sc):
+    """検証の範囲の一行（日本語）"""
+    t = (f'評価 {sc["evals"]} 個（未審査 {sc["unreviewed"]}・ok {sc["ok"]}・doubtful {sc["doubtful"]}・reject {sc["reject"]}。'
+         'doubtful と未審査の評価も推論を止めない）。')
+    if sc['finals']:
+        t += (f'最終的な結論 {len(sc["finals"])} 個のうち、成り立つもの {len(sc["finals_hold"])} 個、'
+              f'理論の中に対立する命題（否定）がないもの {len(sc["unopposed"])} 個')
+        if sc['unopposed']:
+            t += '（これらは、反対の根拠に勝ったのではなく、反対の根拠が書かれていないだけである）'
+        t += '。'
+    return t
+
+
 def summarize(th, exts, pref):
     use = [E for E, p in zip(exts, pref) if p and E != INCONSISTENT]
     if not use:
@@ -986,6 +1031,7 @@ def render_generated(th, exts, pref, conflicting, diags):
         key = [l for l in sorted(cr, key=abs) if th.by_id[abs(l)].kind in ('claim', 'concl')]
         out.append('skeptical: ' + (', '.join(th.lit_str(l) for l in key if l in sk) or '（主張・結論はなし）'))
         out.append('credulous: ' + (', '.join(th.lit_str(l) for l in key) or '（主張・結論はなし）'))
+    out.append('; 検証の範囲: ' + scope_text(th, scope(th, exts, pref)))
     for n in th.notes:
         out.append(f'; 注: {n}')
     return '\n'.join(out) + '\n'
@@ -1047,6 +1093,7 @@ def _solve_write(mf, args):
     exts, pref, conflicting = solve(th)
     write_mext(mf, th, exts, pref, conflicting, diags)
     print(f'{mf.path}: Extension {len(exts)} 個' + (f'（preferred {sum(pref)} 個）' if th.priority else ''))
+    print('  検証の範囲: ' + scope_text(th, scope(th, exts, pref)))
     for e in mf.errs:
         print('  注意: ' + e)
     return th, exts, pref
@@ -1147,6 +1194,9 @@ def esc(s):
 
 def report_md(th, exts, pref, conflicting):
     o = []
+    o.append('### 検証の範囲')
+    o.append(scope_text(th, scope(th, exts, pref)) + '結論ごとの依存は mext summary・mext sensitivity で調べる。')
+    o.append('')
     o.append('### 原子命題')
     o.append('| 名前 | 種類 | 文言 | 行 |')
     o.append('|---|---|---|---|')

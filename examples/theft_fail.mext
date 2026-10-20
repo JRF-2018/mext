@@ -140,3 +140,4 @@ E1 preferred:
 extensions: 1 (preferred: 1)
 skeptical: -k1, c1
 credulous: -k1, c1
+; 検証の範囲: 評価 6 個（未審査 6・ok 0・doubtful 0・reject 0。doubtful と未審査の評価も推論を止めない）。

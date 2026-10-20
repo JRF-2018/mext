@@ -58,3 +58,4 @@ E2 preferred:
 extensions: 2 (preferred: 2)
 skeptical: （主張・結論はなし）
 credulous: k1, c1, -c1, k2
+; 検証の範囲: 評価 0 個（未審査 0・ok 0・doubtful 0・reject 0。doubtful と未審査の評価も推論を止めない）。最終的な結論 2 個のうち、成り立つもの 0 個、理論の中に対立する命題（否定）がないもの 0 個。

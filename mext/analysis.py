@@ -115,35 +115,56 @@ def default_targets(th, sk):
     return t
 
 
-def sensitivity(th, targets=None, size=2, facts=False):
+AUTO_GLOBAL = 2        # size='auto' のとき、全候補で調べる組の大きさ
+AUTO_LOCAL = 4         # 依存が見つからない結論について、支持の組の中で調べる組の大きさの上限
+AUTO_MAX_CANDS = 80    # 全候補がこれより多ければ、全候補で調べるのは大きさ 1 まで
+
+
+def sensitivity(th, targets=None, size='auto', facts=False):
+    """size が整数なら、その大きさまでの組を全候補で調べる。'auto' なら、全候補では大きさ 2（候補が多ければ 1）まで調べ、
+    依存が見つからない結論について、支持の組を集めながら、そのすべてと交わる組を大きさ 4 まで調べる（deep_search）"""
     sk0, cr0, n0, p0 = consequences(th)
     if targets is None:
         targets = default_targets(th, sk0)
     cands = candidates(th, facts)
+    auto = size == 'auto'
+    gsize = (AUTO_GLOBAL if len(cands) <= AUTO_MAX_CANDS else 1) if auto else int(size)
     base = {l: status(l, sk0, cr0) for l in targets}
     concl_atoms = [a.id for a in th.atoms.values() if a.kind == 'concl']
-    results = {}          # frozenset(候補 id) -> (sk, cr)
-    for k in range(1, size + 1):
-        for S in itertools.combinations(cands, k):
-            ids = frozenset(c.id for c in S)
-            if k > 1:
-                # 単独で（またはより小さい組で）すべての対象を消す組の上位集合は調べても新しい情報がない
-                pass
+    results = {}          # frozenset(候補 id) -> (sk, cr)。探索の途中で外した大きな組も入る（計算の再利用のため）
+    grid = set()          # 全候補で調べた組（大きさ gsize まで）
+
+    def run(S):
+        ids = frozenset(c.id for c in S)
+        if ids not in results:
             sk, cr, _, _ = consequences(drop(th, S))
             results[ids] = (sk, cr)
-    out = {'base': base, 'cands': cands, 'targets': targets, 'size': size, 'n_ext': n0, 'n_pref': p0, 'per': {}}
+        return results[ids]
+    for k in range(1, gsize + 1):
+        for S in itertools.combinations(cands, k):
+            run(S)
+            grid.add(frozenset(c.id for c in S))
+    out = {'base': base, 'cands': cands, 'targets': targets, 'size': gsize, 'auto': auto,
+           'n_ext': n0, 'n_pref': p0, 'per': {}}
+    by_id = {c.id: c for c in cands}
     for l in targets:
         if base[l] != 'holds':
             out['per'][l] = None
             continue
-        killers = [ids for ids, (sk, cr) in results.items() if status(l, sk, cr) != 'holds']
+        support = minimal_support(th, l, cands)
+        explored = f'全候補で大きさ {gsize} まで'
+        supports = [frozenset(support)]
+        killers = [ids for ids in grid if status(l, *results[ids]) != 'holds']
+        if auto and not killers and support:
+            killers, supports, k = deep_search(th, l, cands, support, gsize, run)
+            explored += f'、支持の組 {len(supports)} 通りのすべてと交わる組を大きさ {k} まで'
         minimal = [S for S in killers if not any(T < S for T in killers)]
         singles = sorted([next(iter(S)) for S in minimal if len(S) == 1], key=lambda x: int(x[1:]))
         groups = sorted([sorted(S, key=lambda x: int(x[1:])) for S in minimal if len(S) > 1])
-        flips = sorted([next(iter(ids)) for ids, (sk, cr) in results.items()
-                        if len(ids) == 1 and status(l, sk, cr) == 'neg'], key=lambda x: int(x[1:]))
-        out['per'][l] = {'singles': singles, 'groups': groups, 'flips': flips,
-                         'support': minimal_support(th, l, cands)}
+        flips = sorted([next(iter(ids)) for ids in grid
+                        if len(ids) == 1 and status(l, *results[ids]) == 'neg'], key=lambda x: int(x[1:]))
+        out['per'][l] = {'singles': singles, 'groups': groups, 'flips': flips, 'support': support,
+                         'explored': explored, 'supports': supports}
     # 外すと新たに成り立つ結論（非単調性）
     appear = []
     for c in cands:
@@ -154,6 +175,58 @@ def sensitivity(th, targets=None, size=2, facts=False):
                     appear.append((c.id, l))
     out['appear'] = appear
     return out
+
+
+def deep_search(th, l, cands, first_support, gsize, run):
+    """依存が見つからない結論について、支持の組を集めながら、そのすべてと交わる組（hitting set）を試す。
+    結論を消す組は、すべての支持の組と交わる必要がある（単調な部分について）。見つかった反例（外しても結論が残る組）
+    からは、それを避ける新しい支持の組を作って加える。戻り値: (結論を消す組, 支持の組の一覧, 調べた大きさ)"""
+    by_id = {c.id: c for c in cands}
+    supports = [frozenset(first_support)]
+    killers, tested = [], set()
+    k = gsize
+    for k in range(gsize + 1, AUTO_LOCAL + 1):
+        while True:
+            U = sorted(set().union(*supports), key=lambda x: int(x[1:]))
+            hs = [frozenset(h) for n in range(1, k + 1) for h in itertools.combinations(U, n)
+                  if all(set(h) & S for S in supports)]
+            hs = [h for h in hs if h not in tested and not any(K <= h for K in killers)]
+            hs = [h for h in hs if not any(g < h for g in hs)]
+            if not hs:
+                break
+            grew = False
+            for h in hs:
+                tested.add(h)
+                sk, cr = run([by_id[x] for x in h])
+                if status(l, sk, cr) != 'holds':
+                    killers.append(h)
+                    continue
+                S = support_avoiding(th, l, cands, h, run)
+                if S is not None and frozenset(S) not in supports:
+                    supports.append(frozenset(S))
+                    grew = True
+                    break
+            if not grew:
+                break
+        if killers:
+            break
+    return killers, supports, k
+
+
+def support_avoiding(th, l, cands, excluded, run):
+    """excluded を外したうえで、なお l が残る候補の極小の組（なければ None）"""
+    pool = [c for c in cands if c.id not in excluded]
+    out = set(excluded)
+    sk, cr = run([c for c in cands if c.id in out])
+    if status(l, sk, cr) != 'holds':
+        return None
+    keep = list(pool)
+    for c in list(pool):
+        trial = [x for x in keep if x is not c]
+        sk, cr = run([x for x in cands if x not in trial])
+        if status(l, sk, cr) == 'holds':
+            keep = trial
+    return [c.id for c in keep]
 
 
 def minimal_support(th, l, cands):
@@ -167,35 +240,58 @@ def minimal_support(th, l, cands):
     return [c.id for c in keep]
 
 
+def idsort(xs):
+    return sorted(xs, key=lambda x: int(x[1:]))
+
+
+def fmt_groups(p, limit=8):
+    """組の一覧。独立した経路（互いに素な支持の組）から一つずつ外す形なら、積の形でまとめる"""
+    groups = p['groups']
+    if not groups:
+        return '—'
+    sups = sorted([S for S in p.get('supports', []) if S], key=lambda S: min(int(x[1:]) for x in S))
+    if len(sups) > 1 and all(not (a & b) for a, b in itertools.combinations(sups, 2)):
+        prod = 1
+        for S in sups:
+            prod *= len(S)
+        gs = {frozenset(g) for g in groups}
+        if len(gs) == prod and all(len(g) == len(sups) and all(len(g & S) == 1 for S in sups) for g in gs):
+            return (f'独立した {len(sups)} つの経路から一つずつ外すと成り立たなくなる: '
+                    + ' × '.join('{' + ', '.join(idsort(S)) + '}' for S in sups) + f'（{prod} 通り）')
+    shown = '; '.join('{' + ', '.join(g) + '}' for g in groups[:limit])
+    return shown + (f'; ほか {len(groups) - limit} 組' if len(groups) > limit else '')
+
+
 def sensitivity_md(th, res, path):
     cands = {c.id: c for c in res['cands']}
     out = [f'# 感度分析: {os.path.basename(path)}', '',
            '（mext sensitivity の出力。争いうる前提を外して Extension を計算し直した結果。'
            '外すのは下の候補だけで、W の事実と規則はそのまま。「成り立つ」は、すべての preferred Extension に含まれること）', '',
-           f'基準の理論: Extension {res["n_ext"]} 個（preferred {res["n_pref"]} 個）。候補 {len(cands)} 個、組の大きさ {res["size"]} まで。', '',
+           f'基準の理論: Extension {res["n_ext"]} 個（preferred {res["n_pref"]} 個）。候補 {len(cands)} 個。全候補で組の大きさ {res["size"]} まで調べた'
+           + ('（依存が見つからない結論は、支持の組を集めて、そのすべてと交わる組を大きさ 4 まで調べた）' if res.get('auto') else '') + '。「—」は、調べた範囲で見つからなかったことを表し、より大きな組で効く可能性は残る。', '',
            '## 候補の前提', '', '| ID | 種類 | 名前 | 内容 | 行 | AI の審査 |', '|---|---|---|---|---|---|']
     for c in res['cands']:
         out.append(f'| {c.id} | {KIND_JA.get(c.kind, c.kind)} | {esc(str(c.label))} | {esc(c.text)} | {c.line} | {c.review} |')
     out += ['', '## 結論ごとの依存', '',
-            '| 結論 | 基準 | 単独で外すと成り立たなくなる | 組で外すと成り立たなくなる（極小の組） | 外すと否定が成り立つ | 極小の支持の組（一例） |',
-            '|---|---|---|---|---|---|']
+            '| 結論 | 基準 | 単独で外すと成り立たなくなる | 組で外すと成り立たなくなる（極小の組） | 外すと否定が成り立つ | 極小の支持の組（一例） | 調べた範囲 |',
+            '|---|---|---|---|---|---|---|']
 
     def ids(xs):
         return ', '.join(xs) if xs else '—'
     for l in res['targets']:
         p = res['per'][l]
         if p is None:
-            out.append(f'| {esc(th.lit_text(l))} | {STATUS_JA[res["base"][l]]} | | | | |')
+            out.append(f'| {esc(th.lit_text(l))} | {STATUS_JA[res["base"][l]]} | | | | | |')
             continue
-        groups = '; '.join('{' + ', '.join(g) + '}' for g in p['groups']) or '—'
-        out.append(f'| {esc(th.lit_text(l))} | 成り立つ | {ids(p["singles"])} | {groups} | {ids(p["flips"])} | {ids(p["support"])} |')
+        groups = fmt_groups(p)
+        out.append(f'| {esc(th.lit_text(l))} | 成り立つ | {ids(p["singles"])} | {groups} | {ids(p["flips"])} | {ids(p["support"])} | {p["explored"]} |')
     # 疑わしい評価への依存
     dep = {}
     for l in res['targets']:
         p = res['per'][l]
         if not p:
             continue
-        for x in p['singles'] + [y for g in p['groups'] for y in g]:
+        for x in dict.fromkeys(p['singles'] + [y for g in p['groups'] for y in g]):
             dep.setdefault(x, []).append(l)
     doubt = [c for c in res['cands'] if c.review in ('doubtful',)]
     out += ['', '## AI が doubtful とした評価', '']
@@ -205,7 +301,7 @@ def sensitivity_md(th, res, path):
         ls = dep.get(c.id, [])
         out.append(f'- {c.id}「{c.text}」: ' + ('次の結論がこれに依存する（外すと成り立たなくなる）: '
                                               + '、'.join(f'「{th.lit_text(l)}」' for l in ls) if ls
-                                              else 'これを外しても、対象の結論はどれも成り立ったまま（単独でも、ほかの候補との組でも）'))
+                                              else f'調べた範囲（全候補で大きさ {res["size"]} までの組など。表の「調べた範囲」の列）では、これを外しても対象の結論はどれも成り立ったまま。より大きな組で効く可能性は残る'))
     out += ['', '## 外すと新たに成り立つ結論（非単調性）', '']
     if not res['appear']:
         out.append('（なし）')
@@ -227,6 +323,84 @@ def cmd_sensitivity(args):
             raise SystemExit('対象を解決できません: ' + '; '.join(errs))
     res = sensitivity(th, targets, args.size, args.facts)
     md = sensitivity_md(th, res, args.file)
+    if args.output:
+        open(args.output, 'w', encoding='utf-8').write(md + '\n')
+        print(f'{args.output} を書き出しました')
+    else:
+        print(md)
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# 一画面の要約（summary）
+# ---------------------------------------------------------------------------
+def short(c, n=36):
+    """候補の短い表示: 評価は「@評価」の部分だけ"""
+    t = c.text.rsplit('@', 1)[1] if c.kind == 'eval' and '@' in c.text else c.text
+    t = t if len(t) <= n else t[:n - 1] + '…'
+    mark = '〔doubtful〕' if c.review == 'doubtful' else ('〔未審査〕' if c.kind == 'eval' and not c.review else '')
+    return f'{c.id}「{t}」{mark}'
+
+
+def summary_md(th, mf, path):
+    exts, pref, _ = core.solve(th)
+    sc = core.scope(th, exts, pref)
+    targets = sc['finals_hold'] or None
+    res = sensitivity(th, targets)
+    cands = {c.id: c for c in res['cands']}
+    out = [f'# 要約: {os.path.basename(path)}', '',
+           '（mext summary の出力。詳しくは mext report・mext sensitivity・mext explain）', '',
+           f'- Extension {len(exts)} 個（preferred {sum(1 for p in pref if p)} 個）。',
+           f'- 検証の範囲: {core.scope_text(th, sc)}', '']
+    finals = sc['finals']
+    out += ['## 最終的な結論', '',
+            '| 結論 | 成否 | 対立する命題 | 決め手になる争いうる前提（単独で外すと成り立たなくなる） | 注意 |',
+            '|---|---|---|---|---|']
+    sk, cr = core.summarize(th, exts, pref)
+    sk, cr = sk or set(), cr or set()
+    contested = {}
+    for l in finals[:12]:
+        st = STATUS_JA[status(l, sk, cr)]
+        opp = 'あり' if core.opposed(th, l) else '**なし**'
+        p = res['per'].get(l)
+        notes = []
+        keys = '—'
+        if p:
+            singles = [cands[x] for x in p['singles']]
+            ev = [c for c in singles if c.kind != 'claim']
+            keys = '、'.join(short(c, 24) for c in ev[:3]) + (f' ほか {len(ev) - 3}' if len(ev) > 3 else '') if ev else '—'
+            if p['groups']:
+                g = fmt_groups(p, limit=3)
+                notes.append(g if g.startswith('独立した') else '組で外すと成り立たなくなる: ' + g)
+            if not p['singles'] and not p['groups']:
+                notes.append('調べた範囲では、外すと成り立たなくなる前提はない（W の事実と、反論が立証されていないことから出ている）'
+                             if not p['support'] else f'調べた範囲（{p["explored"]}）では見つからない')
+            if any(c.review == 'doubtful' for c in singles):
+                notes.append('doubtful の評価に依存')
+            for x in p['singles'] + [y for g2 in p['groups'] for y in g2]:
+                if cands[x].kind == 'eval' and cands[x].review in ('doubtful', ''):
+                    contested.setdefault(x, []).append(l)
+        if not core.opposed(th, l):
+            notes.append('反対の根拠が理論にない')
+        out.append(f'| {esc(th.lit_text(l))} | {st} | {opp} | {esc(keys)} | {esc("。".join(notes))} |')
+    if len(finals) > 12:
+        out.append(f'\n（ほか {len(finals) - 12} 個。mext sensitivity で全部を見る）')
+    out += ['', '## 争点（最終的な結論が依存している、doubtful または未審査の評価）', '']
+    if not contested:
+        out.append('（なし）')
+    ranked = sorted(contested.items(), key=lambda kv: (-len(set(kv[1])), int(kv[0][1:])))
+    for x, ls in ranked[:8]:
+        ls = list(dict.fromkeys(ls))
+        out.append(f'- {short(cands[x], 50)}: 最終的な結論 {len(ls)} 個が依存する（「{th.lit_text(ls[0])}」'
+                   + (f' ほか {len(ls) - 1} 個' if len(ls) > 1 else '') + '）')
+    if len(ranked) > 8:
+        out.append(f'- ほか {len(ranked) - 8} 個（mext sensitivity の「AI が doubtful とした評価」を見る）')
+    return '\n'.join(out)
+
+
+def cmd_summary(args):
+    mf, th, _ = load(args.file)
+    md = summary_md(th, mf, args.file)
     if args.output:
         open(args.output, 'w', encoding='utf-8').write(md + '\n')
         print(f'{args.output} を書き出しました')
@@ -522,8 +696,12 @@ def add_parsers(sub):
     p = sub.add_parser('sensitivity', help='感度分析: 前提を外すと、どの結論が成り立たなくなるか')
     p.add_argument('file')
     p.add_argument('--target', action='append', help='対象の結論（文言。何度でも指定できる。既定は懐疑的帰結の結論すべて）')
-    p.add_argument('--size', type=int, default=2, help='同時に外す前提の数の上限（既定 2）')
+    p.add_argument('--size', default='auto', help="同時に外す前提の数の上限（整数）。既定の auto は、全候補で 2 まで調べ、"
+                   "依存が見つからない結論は、支持の組のすべてと交わる組を 4 まで調べる")
     p.add_argument('--facts', action='store_true', help='Matcha の事実（W）も候補にする（既定は [extra] で足した事実だけ）')
+    p.add_argument('-o', '--output')
+    p = sub.add_parser('summary', help='一画面の要約: 最終的な結論ごとの成否・対立する命題・決め手になる前提と、検証の範囲')
+    p.add_argument('file')
     p.add_argument('-o', '--output')
     p = sub.add_parser('lint', help='書き起こしの粗さの検査')
     p.add_argument('file')
@@ -535,4 +713,4 @@ def add_parsers(sub):
     p = sub.add_parser('snapshot', help='X.matcha と X.mext を X.vN.* として保存する')
     p.add_argument('file')
     p.add_argument('--tag', help='版の名前（既定 v1, v2, …）')
-    return {'sensitivity': cmd_sensitivity, 'lint': cmd_lint, 'diff': cmd_diff, 'snapshot': cmd_snapshot}
+    return {'sensitivity': cmd_sensitivity, 'summary': cmd_summary, 'lint': cmd_lint, 'diff': cmd_diff, 'snapshot': cmd_snapshot}

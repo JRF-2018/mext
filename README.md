@@ -86,6 +86,7 @@ mext report examples/tweety.mext                  # Markdown の表
 mext explain examples/tweety.mext E2 "¬トゥイーティーは飛ぶ"
 mext verify examples/tweety.mext [--skeptical]    # [claimed] に書いた Extension を検証
 mext lean examples/tweety.mext                    # Lean 証明（lean で検査できる。Mathlib 不要）
+mext summary examples/sublease.mext               # 一画面の要約: 最終的な結論・対立する命題・決め手・争点・検証の範囲
 mext sensitivity examples/sublease.mext           # 感度分析: 結論ごとに、どの前提を外すと成り立たなくなるか
 mext lint examples/sublease.mext                  # 書き起こしの粗さの検査
 mext snapshot X.mext && （X.matcha を直す） && mext solve X.mext && mext diff X.v1.mext X.mext
@@ -93,6 +94,8 @@ mext snapshot X.mext && （X.matcha を直す） && mext solve X.mext && mext di
 ```
 
 - **感度分析**（`sensitivity`）は、争いうる前提（評価、主張、`[extra]` で足した前提など）を一つずつ、または組で外して Extension を計算し直す。そして結論ごとに、外すと成り立たなくなる前提、外すと否定が成り立つ前提、AI が doubtful とした評価のうち結論が依存しているものを示す。「Extension が一つで結論が出た」ことが、何に支えられているかを見るためのものである。
+- **検証の範囲**: `solve`・`report`・`summary` は、評価の審査の内訳と、理論の中に対立する命題（否定）を持たない最終的な結論の数を表示する。「Extension が一つで、すべての結論が成り立つ」という見栄えは、反対の根拠が書かれていないだけのことがあるからである。
+- **summary** は、最終的な結論ごとの成否・対立する命題の有無・決め手になる前提と、争点（結論が依存している doubtful の評価）を一画面にまとめる。全表と全導出への入口である。
 - **lint** は、同語反復の評価（`%A <= 事実@A`）、結論の文言の書き写し、立証の手段のない要件など、書き起こしの粗さを知らせる。
 - **diff** は、原子を番号ではなく文言で対応づけて比べる。書き起こしを直すと原子の番号や行番号がずれるので、普通の diff では、論証の何が変わったか（どの結論が否定に転じたか、何に依存するようになったか、どの審査が外れたか）が読めないためである。
 
@@ -153,6 +156,11 @@ python3 tests/run_tool_tests.py  # sensitivity / lint / diff / snapshot の回�
 
 ## 変更履歴
 
+- **0.3.1**（2026-10-20）
+  - 「検証の範囲」（評価の審査の内訳、対立する命題のない最終的な結論の数）を、`solve`・`[summary]`・`report` に出すようにした。
+  - コマンド `summary`（一画面の要約）を追加した。
+  - `sensitivity` の既定を `--size auto` にした。大きさ 2 までで依存が見つからない結論は、支持の組を集めてそのすべてと交わる組を大きさ 4 まで調べる。独立した経路から一つずつ外す形は積の形でまとめる。結論ごとに「調べた範囲」を示す。
+  - スキル mext-analysis のレポートの §0 を、summary と検証の範囲にもとづいて書くようにした。
 - **0.3.0**（2026-10-20）
   - コマンド `sensitivity`（感度分析）、`lint`（書き起こしの粗さの検査）、`diff`（版の意味の差分）、`snapshot`（版の保存）を追加した。
   - スキル mext-analysis / matcha-analysis に、lint を受けて書き起こしを磨き上げる手順（版の保存・差分・改訂の記録。結論のための書き直しは禁止）と、感度分析にもとづいて「何に依存しているか」を書く手順を入れた。

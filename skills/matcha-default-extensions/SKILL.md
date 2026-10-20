@@ -105,6 +105,7 @@ python3 -m mext lean X.mext                  # X.lean（各 Extension が Γ(E)=
 ```
 
 ```bash
+python3 -m mext summary X.mext -o X.summary.md           # 一画面の要約と検証の範囲（0.3.1 以降）
 python3 -m mext sensitivity X.mext -o X.sensitivity.md   # 感度分析（0.3.0 以降）: 結論ごとに、どの前提を外すと成り立たなくなるか
 ```
 
@@ -141,7 +142,7 @@ python3 -m mext sensitivity X.mext -o X.sensitivity.md   # 感度分析（0.3.0 
 ## 8. 反論の候補（立証責任）  … どの評価を争うか、どの例外事実を立証すれば、別の Extension に移るか。
                               sensitivity の表（結論ごとの依存）を貼り、試算があれば示す
 ## 9. 予測した Extension の検証 … [claimed] と verify の結果。外れた場合はその理由
-## 10. 結論                 … (a) 形式的妥当性（主張された結論が Extension に含まれるか）と
+## 10. 結論                 … summary の「検証の範囲」を添えたうえで、(a) 形式的妥当性（主張された結論が Extension に含まれるか）と
                               (b) 実質的妥当性（評価・背景知識を含めて説得的か）を分けて述べる
 ```
 
