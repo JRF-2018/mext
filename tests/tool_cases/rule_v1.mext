@@ -1,0 +1,66 @@
+@mext 1
+theory: rule_v1.matcha
+; MEXT: Matcha EXTension notation。書式は mext の docs/mext.md（スキルでは references/mext.md）を参照。
+
+[ai]
+; AI（または人）の判断。各行の ; 以降に理由を書く。
+;   same "代表の文言" "同じ意味の文言"
+;   neg  "文言A" "文言B"        … B は A の否定
+;   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む
+;   review "事実@評価" ok|doubtful|reject
+
+[extra]
+;   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2
+
+[claimed]
+;   E1*: "文言", -"文言"   … 検証したい Extension（* は preferred であることも主張）
+
+; ===== ここから下は mext.py が自動生成（手で直さない） =====
+[atoms]
+k1     claim  "#原則^規則A [原則]"  ; L2
+f1     fact   "本件"  ; L2,L5
+r1     req    "原則／%要件"  ; L3
+f2     fact   "事実1"  ; L3
+v1     eval   "事実1@要件を満たす"  ; L3
+c1     concl  "効果が生じる〔本件〕"  ; L4,L7
+k2     claim  "#例外^規則B [例外]"  ; L5
+r2     req    "例外／%例外の要件"  ; L6
+f3     fact   "事実2"  ; L6
+v2     eval   "事実2@例外にあたる"  ; L6
+ab1    ab     "ab(原則)"
+
+[W]
+f1, f2, f3
+
+[rules]
+r1: v1 -> r1  ; L3 %要件
+r2: -v1 -> -r1  ; L3 %要件（必要条件の否定）
+r3: -r1 -> -k1  ; L2 要件の否定による主張 原則 の不成立
+r4: v2 -> r2  ; L6 %例外の要件
+r5: -v2 -> -r2  ; L6 %例外の要件（必要条件の否定）
+r6: -r2 -> -k2  ; L5 要件の否定による主張 例外 の不成立
+
+[defaults]
+e1: f2 : v1, r1 / v1  ; eval L3 評価 @要件を満たす
+原則: f1, r1 : k1, c1, -ab1 / k1, c1  ; claim L2 主張 ^規則A
+e2: f3 : v2, r2 / v2  ; eval L6 評価 @例外にあたる
+例外: f1, r2 : k2, -c1 / k2, -c1, ab1  ; claim L5 主張 ^規則B
+
+[priority]
+例外 > 原則
+
+[extensions]
+; 衝突しうるデフォルト: 原則, 例外
+E1:
+  generating: e1, 原則, e2
+  literals: k1, f1, r1, f2, v1, c1, r2, f3, v2
+E2 preferred:
+  generating: e1, e2, 例外
+  literals: f1, r1, f2, v1, -c1, k2, r2, f3, v2, ab1
+
+[marks]
+
+[summary]
+extensions: 2 (preferred: 1)
+skeptical: -c1, k2
+credulous: -c1, k2

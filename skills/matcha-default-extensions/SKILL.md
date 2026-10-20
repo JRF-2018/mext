@@ -27,7 +27,7 @@ description: Matcha / Matcha-D（法的推論の形式言語 Matcha に例外記
     - X は最初のファイル名、または利用者が指定した名前にする。
     - 位置は「ファイル名:L12」で表示される。
   - 既存の `X.mext`（`theory:` 行が 1 つ以上あるもの）。手順2 の `init` は省き、そのファイルの `[ai]` `[extra]` `[claimed]` を引き継ぐ。
-- 出力はすべて `X.mext` と同じディレクトリに置く: `X.mext`、`X.asis.mext`（必要な場合）、`X.alt-*.mext`（試算した場合）、`X.lean`、`X.report.md`。
+- 出力はすべて `X.mext` と同じディレクトリに置く: `X.mext`、`X.asis.mext`（必要な場合）、`X.alt-*.mext`（試算した場合）、`X.lean`、`X.sensitivity.md`（感度分析）、`X.report.md`。
 - 理論が複数のファイルからなるとき、構文チェックは `python3 -m mext.matcha_check --shared-labels --tree A.matcha B.matcha …` で行う（ファイルをまたぐ `!>` や `:: 優先` のラベルを解決するため）。
 
 ## 手順
@@ -104,6 +104,12 @@ python3 -m mext explain X.mext E1 "¬主要な主張"     # 否定は ¬ を前�
 python3 -m mext lean X.mext                  # X.lean（各 Extension が Γ(E)=E を満たすことの Lean 証明）
 ```
 
+```bash
+python3 -m mext sensitivity X.mext -o X.sensitivity.md   # 感度分析（0.3.0 以降）: 結論ごとに、どの前提を外すと成り立たなくなるか
+```
+
+感度分析は §8（反論の候補）の根拠にする。どの評価を争えば結論が変わるかは、あなたの読みより先に、この出力で確かめる。
+
 - **書かれたとおりの理論**: `[ai]` に `reject` が一つでもあるときは、審査を反映しない版も作って比べる。`reject` がなければ両者は同じになるので、作らずに「同一」と書く。
 
   ```bash
@@ -132,7 +138,8 @@ python3 -m mext lean X.mext                  # X.lean（各 Extension が Γ(E)=
 ## 6. あてはめの実質的妥当性  … review の表。構造の問題・事実の食い違い・誤記の疑い。
                               reject がある場合は書かれたとおりの理論（X.asis.mext）との違い。誤記訂正の試算
 ## 7. 懐疑的帰結と信憑的帰結
-## 8. 反論の候補（立証責任）  … どの評価を争うか、どの例外事実を立証すれば、別の Extension に移るか（試算があれば示す）
+## 8. 反論の候補（立証責任）  … どの評価を争うか、どの例外事実を立証すれば、別の Extension に移るか。
+                              sensitivity の表（結論ごとの依存）を貼り、試算があれば示す
 ## 9. 予測した Extension の検証 … [claimed] と verify の結果。外れた場合はその理由
 ## 10. 結論                 … (a) 形式的妥当性（主張された結論が Extension に含まれるか）と
                               (b) 実質的妥当性（評価・背景知識を含めて説得的か）を分けて述べる

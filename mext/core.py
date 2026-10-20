@@ -77,6 +77,7 @@ class Theory:
         self.labels = {}       # Matcha のラベル -> リテラル
         self.aliases = {}      # 別名（ラベル・元の文言・neg/same 前の文言）-> リテラルの集合
         self.rejected = set()  # AI の審査で棄却された評価の原子
+        self.eval_status = {}  # 評価の文言 -> 実際に効いた review（ok / doubtful / reject / None）
         self.notes = []
 
     def alias(self, text, l):
@@ -547,7 +548,9 @@ class Compiler:
         v = self.lit('eval', vtext, line, aliases=(otext,) if otext else ())
         self.n_eval += 1
         name = f'e{self.n_eval}'
-        status = (self.ai.review.get(vtext) or (self.ai.review.get(otext) if otext else None) or ('ok', ''))[0]
+        rv = self.ai.review.get(vtext) or (self.ai.review.get(otext) if otext else None)
+        status = (rv or ('ok', ''))[0]
+        self.th.eval_status[vtext] = rv[0] if rv else None
         if status == 'reject':
             self.th.notes.append(f'{name}（{self.loc(line)} 評価 @{ev}）は AI の審査で棄却された')
             self.th.rejected.add(v)
@@ -900,13 +903,20 @@ def build(mf, use_review=None):
     for t in list(ai.same) + list(ai.same.values()) + list(ai.neg) + list(ai.neg.values()) \
             + list(ai.failure) + list(ai.effect) + list(ai.review):
         if t not in known and ai.canon(t) not in known:
-            mf.errs.append(f'[ai] の文言が理論に見当たりません（効いていない可能性があります）: {t}')
+            hint = ''
+            if '@' in t:     # 評価の文言なら、同じ「@評価」を持つ原子を候補として示す（書き起こしを直した後の付け替えのため）
+                ev = t.rsplit('@', 1)[1]
+                cands = [a.text for a in th.atoms.values() if a.kind == 'eval' and a.text.rsplit('@', 1)[-1] == ev]
+                if cands:
+                    hint = '（同じ評価の原子: ' + '、'.join(f'"{c}"' for c in cands[:3]) + '）'
+            mf.errs.append(f'[ai] の文言が理論に見当たりません（効いていない可能性があります）: {t}{hint}')
     # same / neg は原子の文言で書く必要がある（変換の前に文言を置き換えるため）。別名（ラベルなど）は警告する
     for t in list(ai.same) + list(ai.same.values()) + list(ai.neg) + list(ai.neg.values()):
         if t in th.aliases and t not in th.atoms and t not in comp.texts and not any(th.lit_text(abs(l)) == t for l in th.aliases[t]):
             cands = ', '.join(f'"{th.by_id[abs(l)].text}"' for l in th.aliases[t])
             mf.errs.append(f'[ai] same / neg の「{t}」は原子の文言ではなく別名です。原子の文言（候補: {cands}）で書いてください')
     th.reviews = dict(ai.review)
+    th.docs, th.files = docs, files      # lint などが構文木を参照するため
     th.name_atoms()
     return th, diags
 
@@ -1121,7 +1131,13 @@ def cmd_report(args):
     mf = MextFile(args.file).load()
     th, _ = build(mf)
     exts, pref, conflicting = solve(th)
-    print(report_md(th, exts, pref, conflicting))
+    md = report_md(th, exts, pref, conflicting)
+    if getattr(args, 'output', None):
+        with open(args.output, 'w', encoding='utf-8') as f:
+            f.write(md + '\n')
+        print(f'{args.output} を書き出しました')
+    else:
+        print(md)
     return 0
 
 
@@ -1415,6 +1431,7 @@ def main(argv=None):
                    help='主張がいずれかの Extension で成り立つ（信憑的）ではなく、すべてで成り立つ（懐疑的）ことを検証する')
     p = sub.add_parser('report')
     p.add_argument('file')
+    p.add_argument('-o', '--output')
     p = sub.add_parser('explain')
     p.add_argument('file')
     p.add_argument('ext')
@@ -1427,9 +1444,14 @@ def main(argv=None):
                         'lean/MextSpec.lean）を import し、ReiterExtension も示す')
     p.add_argument('-o', '--output')
     p.add_argument('--namespace')
+    try:
+        from . import analysis
+    except ImportError:          # パッケージとしてではなく直接実行された場合
+        import analysis          # noqa: E402
+    more = analysis.add_parsers(sub)
     args = ap.parse_args(argv)
     f = {'init': cmd_init, 'solve': cmd_solve, 'verify': cmd_verify, 'report': cmd_report,
-         'explain': cmd_explain, 'lean': cmd_lean}[args.cmd]
+         'explain': cmd_explain, 'lean': cmd_lean, **more}[args.cmd]
     r = f(args)
     return r if isinstance(r, int) else 0
 

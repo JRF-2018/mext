@@ -29,6 +29,8 @@ description: 「mext分析」。任意の文書（法律の文書に限らない
   | `X.matcha.md` | 書き起こしのメモ（対応表・補った前提・落としたもの） |
   | `X.mext` | デフォルト理論と Extension（AI の判断は `[ai]`） |
   | `X.asis.mext`、`X.alt-*.mext` | 審査を反映しない版、試算（必要な場合） |
+  | `X.v1.matcha`、`X.v1.mext` など | 書き直す前の版（書き直した場合） |
+  | `X.sensitivity.md` | 感度分析（mext sensitivity の出力） |
   | `X.lean` | Lean 証明（任意） |
   | `X.mext-analysis.md` | **最終レポート**（これを利用者に返す） |
 
@@ -52,7 +54,7 @@ description: 「mext分析」。任意の文書（法律の文書に限らない
 
 ### 2. matcha分析
 
-`../matcha-analysis/SKILL.md` の手順1〜6に従い、`X.matcha` と `X.matcha.md` を作る。手順5 の形の点検（`X.check.mext`）は、次の段階で `X.mext` を作るので省いてよい。
+`../matcha-analysis/SKILL.md` の手順1〜6に従い、`X.matcha` と `X.matcha.md` を作る。手順5 の形の点検と磨き上げ（`lint`、`snapshot`、`diff`）は省かない。書き起こしの粗さは、後の段階では取り返せないからである（mext は、一段にまとめられた評価の中身を検査できない）。
 
 ### 3. MEXT
 
@@ -66,12 +68,22 @@ python3 -m mext solve X.mext
 python3 -m mext verify X.mext && python3 -m mext verify --skeptical X.mext
 python3 -m mext report X.mext
 python3 -m mext explain X.mext E1 "主な結論"
+python3 -m mext sensitivity X.mext -o X.sensitivity.md   # 感度分析: 結論ごとに、何を外すと成り立たなくなるか
+python3 -m mext lint X.mext                   # 書き起こしの粗さの最終確認
 python3 -m mext lean X.mext                   # 任意。lean があれば lean X.lean で確かめる
 ```
 
+- **感度分析がレポートの §0 (c) と §8 の根拠になる**。「何に依存しているか」は、あなたの読みではなく `sensitivity` の出力（単独で外すと成り立たなくなる前提、組で外すと成り立たなくなる組、外すと否定が成り立つ前提）から書く。
+- **Extension が一つで主な結論が懐疑的帰結に入っても、「論証が正しいと確認された」ことにはならない**。doubtful の評価は推論を止めないし、反対の根拠は書き起こされていなければ理論にない。感度分析で、結論が doubtful の評価や補った前提に依存しているかを必ず確かめ、レポートでそう書く。
+
 - **あてはめの審査（review）は、書き起こした本人として甘くならないように注意する**。書き起こしの段階で `@評価` として表に出した判断こそが、文書の論証の弱点の候補である。
 - `X.matcha.md` の「補った前提」は、`[ai]` の審査でも、レポートでも、最も疑うべきものとして扱う。
-- 書き起こしの誤りに気づいたら、`X.matcha` を直して `init` からやり直してよい（`[ai]` と `[claimed]` は引き継ぐ）。直した経緯は `X.matcha.md` に書く。
+- 審査や感度分析の途中で書き起こしの誤りや粗さに気づいたら、書き直してよい。その手順:
+  1. `python3 -m mext snapshot X.mext` で版を保存する（`X.v1.matcha`、`X.v1.mext`）。
+  2. `X.matcha` を直し、`python3 -m mext solve X.mext` で解き直す（`[ai]` と `[claimed]` はそのまま引き継がれる）。
+  3. `python3 -m mext diff X.v1.mext X.mext` で、帰結・依存・審査の変化を見る。「効いていない [ai] の判断」が出たら、示された候補の文言に付け替える。
+  4. 何を受けて何を直したか、diff で何が変わったかを、`X.matcha.md` の「改訂の記録」に書く。
+  - 書き直してよいのは、原文への忠実さと粒度を上げるためだけである。**結論を出すため、または消すために書き直してはならない**。
 - `reject` がある場合の `X.asis.mext` と、反論を立証した場合などの試算 `X.alt-*.mext` は、matcha-default-extensions と同じように作る。
 
 ### 4. レポート `X.mext-analysis.md` を書く
@@ -87,12 +99,13 @@ python3 -m mext lean X.mext                   # 任意。lean があれば lean 
                            (c) 何に依存しているか（決め手になっている評価・補った前提・優先順位）
 ## 1. 文書の論証          … 要約と、書き起こした範囲
 ## 2. 書き起こし（matcha分析）… X.matcha の要所（全文が長ければ抜粋し、ファイルを参照させる）、
-                           対応表の要約、補った前提、落としたもの
+                           対応表の要約、補った前提、落としたもの、lint の結果、改訂の記録（diff の要点）
 ## 3. 構文チェック        … （matcha_check の出力）
 ## 4. AI の判断           … [ai] / [extra] の表と理由。保留した判断
 ## 5. デフォルト理論と Extension … report の表（原子が 40 を超えたら要約）。Extension の一覧、preferred、
                            主な結論の導出（explain の出力）
-## 6. あてはめの実質的妥当性 … review の表。補った前提の審査。asis との違い、試算
+## 6. あてはめの実質的妥当性と感度 … review の表。補った前提の審査。sensitivity の表（結論ごとの依存）と、
+                           doubtful の評価のうち結論が依存しているもの。asis との違い、試算
 ## 7. 懐疑的帰結と信憑的帰結
 ## 8. 反論の候補（立証責任）… どの評価を争えば、どの事実を示せば、結論が変わるか（試算があれば示す）
 ## 9. 予測した Extension の検証 … [claimed] と verify の結果

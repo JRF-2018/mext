@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""分析コマンド（sensitivity / lint / diff / snapshot）の回帰テスト"""
+import os, sys, shutil, tempfile, io, contextlib
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, '..'))
+from mext import core, analysis
+
+EX = os.path.join(HERE, '..', 'examples')
+TC = os.path.join(HERE, 'tool_cases')
+fail = 0
+
+
+def check(name, cond, detail=''):
+    global fail
+    print(('OK  ' if cond else 'NG  ') + name + ('' if cond else ': ' + detail))
+    fail += 0 if cond else 1
+
+
+def theory(path):
+    return analysis.load(path)[1]
+
+
+# --- sensitivity
+th = theory(os.path.join(EX, 'sublease.mext'))
+res = analysis.sensitivity(th)
+l = core.lit_from_text(th, '¬甲は本件賃貸借を解除できる')
+p = res['per'][l]
+check('sensitivity: 独立な二つの抗弁は単独では結論を消さない', not p['singles'], str(p['singles']))
+check('sensitivity: 二つの抗弁を組で外すと結論が消える', len(p['groups']) >= 1, str(p['groups']))
+
+th = theory(os.path.join(EX, 'tweety.mext'))
+res = analysis.sensitivity(th)
+l = core.lit_from_text(th, '¬トゥイーティーは飛ぶ')
+p = res['per'][l]
+check('sensitivity: 例外の主張を外すと原則の結論（否定の否定）が出る', len(p['flips']) == 1, str(p['flips']))
+
+th = theory(os.path.join(EX, 'chain.mext'))
+res = analysis.sensitivity(th)
+l = core.lit_from_text(th, 'YはXに解雇後の賃金を支払わなければならない')
+l0 = core.lit_from_text(th, '本件解雇は無効である')
+check('sensitivity: 連鎖の後の結論は前の主張の前提にも依存する',
+      set(res['per'][l0]['singles']) < set(res['per'][l]['singles']))
+
+# --- lint
+mf, th, _ = analysis.load(os.path.join(TC, 'coarse.mext'))
+exts, pref, _ = core.solve(th)
+items = analysis.lint(th, mf, exts, pref)
+kinds = [x[2] for x in items]
+for k in ('同語反復の評価', '結論の文言の書き写し', '立証の手段のない要件', '行き止まりの主張'):
+    check(f'lint: {k}', k in kinds, str(kinds))
+mf, th, _ = analysis.load(os.path.join(EX, 'theft.mext'))
+exts, pref, _ = core.solve(th)
+check('lint: 原典の窃盗罪の例には警告がない', not [x for x in analysis.lint(th, mf, exts, pref) if x[0] == '警告'])
+
+# --- diff
+ta, tb = theory(os.path.join(TC, 'rule_v1.mext')), theory(os.path.join(TC, 'rule_v2.mext'))
+mfa, mfb = core.MextFile(os.path.join(TC, 'rule_v1.mext')).load(), core.MextFile(os.path.join(TC, 'rule_v2.mext')).load()
+md = analysis.diff_md('rule_v1.mext', 'rule_v2.mext', ta, tb, mfa, mfb, ('concl', 'claim'))
+check('diff: 結論の否定への転化を示す', '否定に転じた**: 「#例外^規則B [例外]」、「¬効果が生じる〔本件〕」' in md, md[:400])
+check('diff: 新たに成り立つ主張を示す', '新たに成り立つ**: 「#原則^規則A [原則]」' in md)
+
+# --- snapshot
+d = tempfile.mkdtemp()
+try:
+    for f in ('rule_v1.matcha', 'rule_v1.mext'):
+        shutil.copy(os.path.join(TC, f), d)
+    with contextlib.redirect_stdout(io.StringIO()):
+        analysis.cmd_snapshot(type('A', (), {'file': os.path.join(d, 'rule_v1.mext'), 'tag': None})())
+    snap = os.path.join(d, 'rule_v1.v1.mext')
+    ok = os.path.exists(snap) and os.path.exists(os.path.join(d, 'rule_v1.v1.matcha')) \
+        and 'theory: rule_v1.v1.matcha' in open(snap, encoding='utf-8').read()
+    check('snapshot: 版のファイルを作り theory: を書き換える', ok)
+finally:
+    shutil.rmtree(d)
+
+print(f'失敗 {fail} 件')
+sys.exit(1 if fail else 0)

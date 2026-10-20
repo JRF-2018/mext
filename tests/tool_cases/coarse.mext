@@ -1,0 +1,72 @@
+@mext 1
+theory: coarse.matcha
+; MEXT: Matcha EXTension notation。書式は mext の docs/mext.md（スキルでは references/mext.md）を参照。
+
+[ai]
+; AI（または人）の判断。各行の ; 以降に理由を書く。
+;   same "代表の文言" "同じ意味の文言"
+;   neg  "文言A" "文言B"        … B は A の否定
+;   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む
+;   review "事実@評価" ok|doubtful|reject
+
+[extra]
+;   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2
+
+[claimed]
+;   E1*: "文言", -"文言"   … 検証したい Extension（* は preferred であることも主張）
+
+; ===== ここから下は mext.py が自動生成（手で直さない） =====
+[atoms]
+k1     claim  "#分業からの禁止^協働を維持すべきという暗黙の価値前提 [分業]"  ; L2
+f1     fact   "理想化された社会"  ; L2
+r1     req    "分業／%協働を維持するため殺し合いを避ける必要がある"  ; L3
+f2     fact   "相互監視と武装を増やせば生産に割ける仕事が減る"  ; L3
+v1     eval   "相互監視と武装を増やせば生産に割ける仕事が減る@協働を維持するため殺し合いを避ける必要がある"  ; L3
+c1     concl  "人を殺してはいけない〔理想化された社会〕"  ; L4
+k2     claim  "#法の智恵 [智恵]"  ; L6
+f3     fact   "殺害例外の扱い"  ; L6
+r2     req    "智恵／%人を殺してはいけない"  ; L7
+r3     req    "智恵／%例外を具体的に列挙するのは危険である"  ; L8
+f4     fact   "人はやむを得ない状況を自ら選ぶこともできる"  ; L8
+x1     aux    "（L6 の AND・2項・1）"  ; L6
+c2     concl  "一般的正義を具体的事情に沿って弁証すべきである〔殺害例外の扱い〕"  ; L9
+k3     claim  "#限界 [限界]"  ; L11
+f5     fact   "三原理"  ; L11
+r4     req    "限界／%抑止には限界がある"  ; L12
+c3     concl  "三原理だけでは殺害の抑止を完結できない〔三原理〕"  ; L13
+
+[W]
+f1, f2, f3, f4, f5
+
+[rules]
+r1: v1 -> r1  ; L3 %協働を維持するため殺し合いを避ける必要がある
+r2: -v1 -> -r1  ; L3 %協働を維持するため殺し合いを避ける必要がある（必要条件の否定）
+r3: -r1 -> -k1  ; L2 要件の否定による主張 分業 の不成立
+r4: f4 -> r3  ; L8 %例外を具体的に列挙するのは危険である
+r5: -f4 -> -r3  ; L8 %例外を具体的に列挙するのは危険である（必要条件の否定）
+r6: r2 & r3 -> x1  ; AND
+r7: -r2 -> -x1  ; AND（必要条件の否定）
+r8: -r3 -> -x1  ; AND（必要条件の否定）
+r9: -x1 -> -k2  ; L6 要件の否定による主張 智恵 の不成立
+r10: -r4 -> -k3  ; L11 要件の否定による主張 限界 の不成立
+
+[defaults]
+e1: f2 : v1, r1 / v1  ; eval L3 評価 @協働を維持するため殺し合いを避ける必要がある
+分業: f1, r1 : k1, c1 / k1, c1  ; claim L2 主張 ^協働を維持すべきという暗黙の価値前提
+智恵: f3, x1 : k2, c2 / k2, c2  ; claim L6 主張
+限界: f5, r4 : k3, c3 / k3, c3  ; claim L11 主張
+
+[priority]
+
+[extensions]
+; 衝突しうるデフォルト: なし
+E1 preferred:
+  generating: e1, 分業
+  literals: k1, f1, r1, f2, v1, c1, f3, r3, f4, f5
+
+[marks]
+
+[summary]
+extensions: 1 (preferred: 1)
+skeptical: k1, c1
+credulous: k1, c1

@@ -65,6 +65,7 @@ claude plugin install mext@jrf-mext
 
 - **mext分析**は、文書の論証を Matcha に書き起こし（matcha分析）、デフォルト論理として Extension を計算・検証し、「この文書の論証は形式的に妥当か、実質的に説得的か、何に依存しているか」を述べるレポートを返す。法律の文書に限らず、論説、評論、企画書などにも使える。文書が大きいときは、レポートの長さ（要点／標準／詳細）を先に聞く。
 - 決定論的なのは mext の部分（構文チェック、変換、Extension、Lean）だけで、書き起こしと審査は AI の判断である。そのため、書き起こしのどの行が原文のどこから来たか、AI が何を補い、何を落とし、どう評価したかを、すべてファイルに残す。
+- 書き起こしは AI の解釈なので、スキルは `lint` の警告を受けて書き起こしを磨き上げる手順を踏む。書き直す前の版は `snapshot` で残し、`diff` で前後を比べ、何を受けて何を直したかを記録する。書き直してよいのは原文への忠実さと粒度を上げるためだけで、結論を出す（消す）ための書き直しは禁じている。
 - 試した例は [examples/analysis/](examples/analysis/) にある。
 
 ### AI に頼むとき
@@ -85,7 +86,15 @@ mext report examples/tweety.mext                  # Markdown の表
 mext explain examples/tweety.mext E2 "¬トゥイーティーは飛ぶ"
 mext verify examples/tweety.mext [--skeptical]    # [claimed] に書いた Extension を検証
 mext lean examples/tweety.mext                    # Lean 証明（lean で検査できる。Mathlib 不要）
+mext sensitivity examples/sublease.mext           # 感度分析: 結論ごとに、どの前提を外すと成り立たなくなるか
+mext lint examples/sublease.mext                  # 書き起こしの粗さの検査
+mext snapshot X.mext && （X.matcha を直す） && mext solve X.mext && mext diff X.v1.mext X.mext
+                                                  # 書き起こしを直す前後の、帰結・依存・審査の差
 ```
+
+- **感度分析**（`sensitivity`）は、争いうる前提（評価、主張、`[extra]` で足した前提など）を一つずつ、または組で外して Extension を計算し直す。そして結論ごとに、外すと成り立たなくなる前提、外すと否定が成り立つ前提、AI が doubtful とした評価のうち結論が依存しているものを示す。「Extension が一つで結論が出た」ことが、何に支えられているかを見るためのものである。
+- **lint** は、同語反復の評価（`%A <= 事実@A`）、結論の文言の書き写し、立証の手段のない要件など、書き起こしの粗さを知らせる。
+- **diff** は、原子を番号ではなく文言で対応づけて比べる。書き起こしを直すと原子の番号や行番号がずれるので、普通の diff では、論証の何が変わったか（どの結論が否定に転じたか、何に依存するようになったか、どの審査が外れたか）が読めないためである。
 
 Claude Code では次のように使う。プラグインとして入れた場合は、プラグイン名の名前空間が付く。
 
@@ -129,6 +138,7 @@ Claude Code では次のように使う。プラグインとして入れた場�
 ```bash
 python3 tests/run_tests.py       # 構文チェッカの回帰テスト
 python3 tests/run_mext_tests.py  # Extension の回帰テスト
+python3 tests/run_tool_tests.py  # sensitivity / lint / diff / snapshot の回帰テスト
 ```
 
 `tests/docs/` には、スキル mext-analysis / matcha-analysis を試すための文書（自作の架空の事案・論説・小論）がある。その実行結果は `examples/analysis/` にある。
@@ -143,6 +153,12 @@ python3 tests/run_mext_tests.py  # Extension の回帰テスト
 
 ## 変更履歴
 
+- **0.3.0**（2026-10-20）
+  - コマンド `sensitivity`（感度分析）、`lint`（書き起こしの粗さの検査）、`diff`（版の意味の差分）、`snapshot`（版の保存）を追加した。
+  - スキル mext-analysis / matcha-analysis に、lint を受けて書き起こしを磨き上げる手順（版の保存・差分・改訂の記録。結論のための書き直しは禁止）と、感度分析にもとづいて「何に依存しているか」を書く手順を入れた。
+  - 手引き（writing_matcha.md）に、引用と賛同の分け方、`^根拠` が表示であって立証される前提ではないこと、同語反復の評価や弱い主張の強め書きを避けることを足した。
+  - `[ai]` の審査が書き起こしの変更で外れたとき、同じ「@評価」を持つ原子を付け替えの候補として示すようにした。
+  - 0.2.0 で入れた `$ラベル` の連結を、参照先が主張のときだけに限った（規範を使い回す原典の書き方では結ばない）。
 - **0.2.0**（2026-10-20）
   - スキル `mext-analysis`（mext分析）と `matcha-analysis`（matcha分析）を追加した。任意の文書の論証を Matcha に書き起こして分析する。
   - 要件の位置に書いた `$ラベル` が主張を指すとき、その主張と必要十分に結ぶようにした（主張の連鎖。例 `examples/chain.matcha`）。規範を指す `$名前`（原典の用例。規範を別の事実に使い回す）は従来どおり結ばない。
