@@ -254,6 +254,18 @@ try:
     ok = os.path.exists(snap) and os.path.exists(os.path.join(d, 'rule_v1.v1.matcha')) \
         and 'theory: rule_v1.v1.matcha' in open(snap, encoding='utf-8').read()
     check('snapshot: 版のファイルを作り theory: を書き換える', ok)
+    shutil.copy(os.path.join(d, 'rule_v1.mext'), os.path.join(d, 'rule_v1.check.mext'))
+    with contextlib.redirect_stdout(io.StringIO()):
+        analysis.cmd_snapshot(type('A', (), {'file': os.path.join(d, 'rule_v1.check.mext'), 'tag': None})())
+    snap2 = os.path.join(d, 'rule_v1.check.v1.mext')
+    check('snapshot: 同じ .matcha を使う二つの .mext は、同じ中身の版の .matcha を共有する',
+          os.path.exists(snap2) and 'theory: rule_v1.v1.matcha' in open(snap2, encoding='utf-8').read())
+    with open(os.path.join(d, 'rule_v1.matcha'), 'a', encoding='utf-8') as fh:
+        fh.write('\n// 書き換え\n')
+    with contextlib.redirect_stdout(io.StringIO()):
+        analysis.cmd_snapshot(type('A', (), {'file': os.path.join(d, 'rule_v1.mext'), 'tag': None})())
+    check('snapshot: 中身の違う .matcha は次の版にする', os.path.exists(os.path.join(d, 'rule_v1.v2.matcha'))
+          and 'theory: rule_v1.v2.matcha' in open(os.path.join(d, 'rule_v1.v2.mext'), encoding='utf-8').read())
 finally:
     shutil.rmtree(d)
 
@@ -281,6 +293,38 @@ p = res['per'].get(l)
 check('sensitivity: 一部の Extension でだけ成り立つ結論も対象にし、成り立つ Extension がなくなる前提を示す',
       p is not None and res['base'][l] == 'credulous' and any(res['cands'][int(x[1:]) - 1].kind == 'claim' for x in p['singles']), str(p))
 
+# --- 懐疑的な結論で、単独で外すと一部の Extension には残る前提（浮動する結論）
+d = tempfile.mkdtemp()
+try:
+    with open(os.path.join(d, 'float.matcha'), 'w', encoding='utf-8') as fh:
+        fh.write("""#甲説 <= 本件: (
+    %甲の根拠 <= 甲の事実@甲の評価
+) >> 甲である as 甲
+
+#乙説 <= 本件: (
+    %乙の根拠 <= 乙の事実@乙の評価
+) >> not 甲である as 乙
+
+#甲からの結論 <= 本件: (
+    $甲
+) >> 共通の結論 as 共通甲
+
+#乙からの結論 <= 本件: (
+    %乙が成り立つ <= 乙の事実@乙の評価
+    %甲が成り立たない <= 乙の事実@乙から共通へ
+) >> 共通の結論 as 共通乙
+""")
+    with contextlib.redirect_stdout(io.StringIO()):
+        core.main(['init', '--solve', os.path.join(d, 'float.matcha')])
+    th = theory(os.path.join(d, 'float.mext'))
+    res = analysis.sensitivity(th)
+    l = core.lit_from_text(th, '共通の結論')
+    p = res['per'].get(l)
+    check('sensitivity: 浮動する結論の片方の橋渡しは「一部の Extension には残る」', p is not None and res['base'][l] == 'holds'
+          and p['partial'] and set(p['partial']) <= set(p['singles']), str(p))
+finally:
+    shutil.rmtree(d)
+
 # --- compare（読みの比較）
 from mext import compare
 cf = compare.CompareFile(os.path.join(TC, 'views.compare')).load()
@@ -289,6 +333,10 @@ md = compare.compare_md(A, B, cf, 'views.compare')
 check('compare: ラベルで指した主張は、その結論どうしを比べる', '| 1 | 至善の神観では出生の差を自由選択の結果として説明する〔神〕 | 神は一人一人に最良の結果をもたらそうと努める〔神〕 |' in md, md[:600])
 check('compare: 成否の違いを示す', '対応 2 組のうち、成否が違うもの 2 組' in md and 'B では preferred Extension が分かれる' in md)
 check('compare: 対応のない最終的な結論を示す', 'A だけ（1 個）: 「二つの神観のどちらかでなければ矛盾するという著者の判断がある〔著者〕」' in md)
+check('compare: [match] の関係の語を示す', '〔報告と主張〕同じ立場' in md and '[match] に書いた関係: 報告と主張 1 組' in md, md[:1500])
+cfk = compare.CompareFile(os.path.join(EX, 'analysis', 'compare_kindness', 'kindness_essay.A.vs.B.compare')).load()
+mdk = compare.compare_md(compare.Reading(cfk.a), compare.Reading(cfk.b), cfk)
+check('compare: 一方で中間の結論のものを示す', 'A では中間の結論' in mdk)
 check('compare: 解決できない [match] の行を示す', '「@x」 / 「@y」: A に見当たらない、B に見当たらない' in md)
 cf2 = compare.CompareFile(os.path.join(TC, 'views.compare')).load()
 cf2.matches = []

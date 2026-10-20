@@ -30,6 +30,17 @@ INCONSISTENT = core.INCONSISTENT
 CJK = re.compile(r'[\u3040-\u30ff\u4e00-\u9fff]')     # 表示を縮める長さを、日本語と英語で変える
 
 
+# 対応の関係（[match] の行の 4 つ目の語。任意）
+RELATIONS = {'同じ': 'same', 'same': 'same', '強さ': 'strength', 'strength': 'strength',
+             '報告と主張': 'report-claim', 'report-claim': 'report-claim', '対象': 'target', 'target': 'target'}
+REL_LABEL = {'same': ('同じ', 'same'), 'strength': ('強さが違う', 'strength differs'),
+             'report-claim': ('報告と主張', 'report vs claim'), 'target': ('対象が違う', 'target differs')}
+
+
+def rel_label(r):
+    return REL_LABEL[r][1] if _en() else REL_LABEL[r][0]
+
+
 def base_text(t):
     """結論の文言から〔対象〕を除いたもの（自動の対応づけに使う）"""
     return re.sub(r'〔[^〔〕]*〕$', '', t.lstrip('¬')).strip()
@@ -61,8 +72,9 @@ class CompareFile:
             if sec is None and s.startswith('@mext-compare'):
                 continue
             words, quoted = core.split_words(s)
-            if sec == 'match' and len(words) == 3 and words[0] == 'match' and quoted[1] and quoted[2]:
-                self.matches.append((words[1], words[2], note, i))
+            if sec == 'match' and len(words) in (3, 4) and words[0] == 'match' and quoted[1] and quoted[2] \
+                    and (len(words) == 3 or (not quoted[3] and words[3] in RELATIONS)):
+                self.matches.append((words[1], words[2], note, i, RELATIONS[words[3]] if len(words) == 4 else None))
             else:
                 self.errs.append(_t('{i} 行目を解釈できません: {l}', 'cannot parse line {i}: {l}', i=i, l=ln.strip()))
         if not (self.a and self.b):
@@ -140,7 +152,9 @@ def pair_matches(cf, A, B):
     """[match] の行と、文言が同じものの自動の対応づけ。(結論の対応, 前提の対応, 解決できなかった行)"""
     concl, prem, bad = [], [], []
     seen_a, seen_b = set(), set()
-    for ta, tb, note, i in cf.matches if cf else []:
+    for ta, tb, note, i, rel in cf.matches if cf else []:
+        if rel:
+            note = f'〔{rel_label(rel)}〕' + (note or '') if not _en() else f'[{rel_label(rel)}] ' + (note or '')
         la, lb = A.lit(ta), B.lit(tb)
         if la is not None and lb is not None:
             concl.append((la, lb, note or _t('（理由なし）', '(no reason given)'), 'match'))
@@ -159,6 +173,11 @@ def pair_matches(cf, A, B):
         if not why:
             why.append(_t('一方は結論、他方は前提', 'one is a conclusion and the other a premise'))
         bad.append((i, ta, tb, join(why)))
+    if cf:
+        cf.rel_count = {}
+        for *_, rel in cf.matches:
+            if rel:
+                cf.rel_count[rel] = cf.rel_count.get(rel, 0) + 1
     # 自動: 〔対象〕を除いた文言が同じ最終的な結論
     # 肯定と否定は別の結論として扱う（「X」と「¬X」がどちらも最終的な結論のことがある）
     bmap = {}
@@ -277,6 +296,10 @@ def compare_md(A, B, cf=None, cpath=None):
         doubt_b = [c.id for c in db if c.review == 'doubtful']
         if bool(doubt_a) != bool(doubt_b):
             diff.append(_t('doubtful の評価に依存するのは {s} だけ', 'only {s} depends on doubtful evaluations', s='A' if doubt_a else 'B'))
+        fa, fb = la in A.finals or -la in A.finals, lb in B.finals or -lb in B.finals
+        if fa != fb:
+            diff.append(_t('{s} では中間の結論（ほかの主張の前提に使われている）', 'an intermediate conclusion in {s} (used as a premise of another claim)',
+                           s='B' if fa else 'A'))
         st = f'{analysis.STATUS_JA[sta]} / {analysis.STATUS_JA[stb]}'
         sh = join(f'{x}={y}' for x, y in shared) if shared else '—'
         out.append(f'| {k} | {analysis.esc(A.th.lit_text(la))} | {analysis.esc(B.th.lit_text(lb))} | {st} | '
@@ -286,6 +309,14 @@ def compare_md(A, B, cf=None, cpath=None):
         out.append(_t('| | （対応する結論がない。[match] に書く） | | | | | | | |', '| | (no corresponding conclusions; write them in [match]) | | | | | | | |'))
     out.append('')
     out.append(_t('対応 {n} 組のうち、成否が違うもの {d} 組。', '{d} of {n} corresponding pairs differ in status.', n=len(concl), d=n_diff_status))
+    rc = getattr(cf, 'rel_count', {}) if cf else {}
+    if rc:
+        out.append(_t('[match] に書いた関係: ', 'Relations written in [match]: ')
+                   + join(_t('{r} {n} 組', '{r} {n}', r=rel_label(r), n=n) for r, n in rc.items()) + _t('。', '.'))
+    out += ['', _t('決め手の数や、成り立つ結論の数だけで、読みの優劣を決めない。評価を明示して書いた読みほど依存が多く見え、'
+                   '判断を定義や結論の文言に含めた読みほど崩れにくく見える。',
+                   'Do not rank readings by the number of decisive premises or of conclusions that hold. A reading that writes its '
+                   'evaluations out shows more dependencies; a reading that folds judgments into definitions or conclusion texts looks sturdier.')]
     out.append('')
     # 3. 対応のない最終的な結論
     ma = {la for la, _, _, _ in concl}

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mext"
-version = "0.5.2"
+version = "0.5.3"
 description = "Read Matcha legal-reasoning code as default logic: syntax checker, Reiter/prioritized extension solver with Lean certificates"
 readme = "README.md"
 license = { text = "MIT" }

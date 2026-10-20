@@ -65,6 +65,15 @@ def kept(st, mode):
     return st == 'holds' or (mode == 'credulous' and st == 'credulous')
 
 
+class _PM:
+    """単独で外すと懐疑的には成り立たなくなるが、一部の Extension には残る前提の印"""
+    def __getitem__(self, i):
+        return ' (still in some Extensions)' if _en() else '〔一部の Extension には残る〕'
+
+
+PARTIAL_MARK = _PM()
+
+
 class _L(dict):
     """値が (日本語, 英語) の辞書。出力の言語に合わせて返す"""
     def __getitem__(self, k):
@@ -256,8 +265,11 @@ def sensitivity(th, targets=None, size='auto', facts=False):
         groups = sorted([sorted(S, key=lambda x: int(x[1:])) for S in minimal if len(S) > 1])
         flips = sorted([next(iter(ids)) for ids in grid
                         if len(ids) == 1 and status(l, *results[ids]) == 'neg'], key=lambda x: int(x[1:]))
+        # 懐疑的に成り立つ結論について、単独で外したとき一部の Extension には残るもの（すべての読みでは成り立たなくなるが、
+        # どの読みからも導けなくなるわけではない）
+        partial = [x for x in singles if mode == 'holds' and status(l, *results[frozenset([x])]) == 'credulous']
         out['per'][l] = {'singles': singles, 'groups': groups, 'flips': flips, 'support': support,
-                         'explored': explored, 'supports': supports}
+                         'explored': explored, 'supports': supports, 'partial': partial}
     # [ai] の concern（一つの争点を共有する前提の組）を一つの単位として外す
     out['concerns'], out['distincts'], out['unresolved'] = [], [], []
     for name, (members, note) in getattr(th, 'concerns', {}).items():
@@ -421,8 +433,10 @@ def fmt_groups(p, limit=8):
             return _t('独立した {n} つの経路から一つずつ外すと成り立たなくなる: {s}（{p} 通り）',
                       'fails when one premise is removed from each of {n} independent paths: {s} ({p} combinations)',
                       n=len(sups), s=' × '.join('{' + ', '.join(idsort(S)) + '}' for S in sups), p=prod)
+    if limit is None:
+        limit = len(groups)
     shown = '; '.join('{' + ', '.join(g) + '}' for g in groups[:limit])
-    return shown + (_t('; ほか {n} 組', '; {n} more sets', n=len(groups) - limit) if len(groups) > limit else '')
+    return shown + (_t('; ほか {n} 組（--full ですべて）', '; {n} more sets (all with --full)', n=len(groups) - limit) if len(groups) > limit else '')
 
 
 def shared_judgments(res):
@@ -442,7 +456,7 @@ def shared_judgments(res):
     return out
 
 
-def sensitivity_md(th, res, path):
+def sensitivity_md(th, res, path, full=False):
     cands = {c.id: c for c in res['cands']}
     Q = q
     J = join
@@ -465,23 +479,26 @@ def sensitivity_md(th, res, path):
         rvw = core.FACT_KIND_JA2EN.get(c.review, c.review) if _en() else c.review
         out.append(f'| {c.id} | {KIND_JA.get(c.kind, c.kind)} | {esc(str(c.label))} | {esc(c.text)} | {c.line} | {rvw} | '
                    + (_t('**補った**', '**supplied**') if getattr(c, 'supplied', False) else '') + ' |')
-    out += ['', _t('## 結論ごとの依存', '## Dependencies of each conclusion'), '',
+    out += ['', _t('## 結論ごとの依存', '## Dependencies of each conclusion'), '', _t('「成り立たなくなる」は、懐疑的に成り立つ結論では、すべての preferred Extension には入らなくなること（一部の Extension に残る場合は'
+                 '〔一部の Extension には残る〕と印を付ける）。一部の Extension でだけ成り立つ結論では、どの preferred Extension にも入らなくなること。',
+                 '“Defeats” means, for a conclusion that holds skeptically, that it is no longer in every preferred Extension (marked '
+                 '“(still in some Extensions)” when it remains in some); for a conclusion that holds only in some Extensions, that it is in no preferred Extension.'), '',
             _t('| 結論 | 基準 | 単独で外すと成り立たなくなる | 組で外すと成り立たなくなる（極小の組） | 外すと否定が成り立つ | 極小の支持の組（一例） | 調べた範囲 |',
                '| conclusion | base | removing alone defeats it | removing a set defeats it (minimal sets) | removing makes its negation hold | a minimal support set (example) | scope searched |'),
             '|---|---|---|---|---|---|---|']
 
-    def ids(xs):
-        return ', '.join(xs) if xs else '—'
+    def ids(xs, partial=()):
+        return ', '.join(x + (PARTIAL_MARK[0] if x in partial else '') for x in xs) if xs else '—'
     for l in res['targets']:
         p = res['per'][l]
         if p is None:
             out.append(f'| {esc(th.lit_text(l))} | {STATUS_JA[res["base"][l]]} | | | | | |')
             continue
-        groups = fmt_groups(p)
+        groups = fmt_groups(p, limit=None if full else 8)
         pn = path_note(p, res)
         if pn and is_product(p):
             groups += _t('。', '. ') + pn
-        out.append(f'| {esc(th.lit_text(l))} | {STATUS_JA[res["base"][l]]} | {ids(p["singles"])} | {groups} | {ids(p["flips"])} | {ids(p["support"])} | {p["explored"]} |')
+        out.append(f'| {esc(th.lit_text(l))} | {STATUS_JA[res["base"][l]]} | {ids(p["singles"], p.get("partial", ()))} | {groups} | {ids(p["flips"])} | {ids(p["support"])} | {p["explored"]} |')
     # 疑わしい評価への依存: 単独で必要なものと、組の一員にすぎないものを分ける
     dep1, depg = {}, {}
     for l in res['targets']:
@@ -579,7 +596,7 @@ def cmd_sensitivity(args):
         if errs:
             raise SystemExit(_t('対象を解決できません: ', 'cannot resolve the targets: ') + '; '.join(errs))
     res = sensitivity(th, targets, args.size, args.facts)
-    md = sensitivity_md(th, res, args.file)
+    md = sensitivity_md(th, res, args.file, full=getattr(args, 'full', False))
     if args.output:
         open(args.output, 'w', encoding='utf-8').write(md + '\n')
         print(_t('{o} を書き出しました', 'wrote {o}', o=args.output))
@@ -844,7 +861,10 @@ def summary_md(th, mf, path):
                           '- Connectives: of {n} places, flipping {d} changes a final conclusion or its dependencies '
                           '(explicit {a}, reading {b}, unrecorded {c}; records are AI judgments; see mext connectives).',
                           n=len(crow), d=len(dec), a=rec['明示'], b=rec['読み'], c=rec[None]))
-    out += [_t('## 最終的な結論', '## Final conclusions'), '',
+    out += [_t('## 最終的な結論', '## Final conclusions'), '', _t('「成り立たなくなる」は、懐疑的に成り立つ結論では、すべての preferred Extension には入らなくなること（一部の Extension に残る場合は'
+                 '〔一部の Extension には残る〕と印を付ける）。一部の Extension でだけ成り立つ結論では、どの preferred Extension にも入らなくなること。',
+                 '“Defeats” means, for a conclusion that holds skeptically, that it is no longer in every preferred Extension (marked '
+                 '“(still in some Extensions)” when it remains in some); for a conclusion that holds only in some Extensions, that it is in no preferred Extension.'), '',
             _t('| 結論 | 成否 | 対立する命題 | 決め手になる争いうる前提（単独で外すと成り立たなくなる） | 注意 |',
                '| conclusion | status | opposing proposition | decisive contestable premises (removing alone defeats it) | notes |'),
             '|---|---|---|---|---|']
@@ -859,7 +879,8 @@ def summary_md(th, mf, path):
         if p:
             singles = [cands[x] for x in p['singles']]
             ev = [c for c in singles if c.kind != 'claim']
-            keys = join(short(c, 24) for c in ev[:3]) + (_t(' ほか {n}', ' and {n} more', n=len(ev) - 3) if len(ev) > 3 else '') if ev else '—'
+            keys = join(short(c, 24) + (PARTIAL_MARK[0] if c.id in p.get('partial', ()) else '') for c in ev[:3]) \
+                + (_t(' ほか {n}', ' and {n} more', n=len(ev) - 3) if len(ev) > 3 else '') if ev else '—'
             if p['groups']:
                 g = fmt_groups(p, limit=3)
                 if is_product(p):
@@ -915,7 +936,9 @@ def summary_md(th, mf, path):
     for x, d in ranked[:8]:
         parts = []
         if d['1']:
-            parts.append(_t('単独で外すと {x} が成り立たなくなる', 'removing it alone defeats {x}', x=names(d["1"])))
+            part = all(x in (res['per'].get(l) or {}).get('partial', ()) for l in d['1'])
+            parts.append(_t('単独で外すと {x} が成り立たなくなる', 'removing it alone defeats {x}', x=names(d["1"]))
+                         + (PARTIAL_MARK[0] if part else ''))
         if d['g']:
             parts.append(_t('組の一員として {x} を支える（これ一つを外しても残る）', 'supports {x} as a member of a set (removing it alone leaves it)', x=names(d["g"])))
         c = cands[x]
@@ -1312,18 +1335,33 @@ def cmd_diff(args):
 def cmd_snapshot(args):
     mf = core.MextFile(args.file).load()
     base = os.path.splitext(args.file)[0]
-    k = 1
-    while os.path.exists(f'{base}.v{k}.mext'):
-        k += 1
-    tag = args.tag or f'v{k}'
     files = mf.theory_files()
+
+    def same_file(a, b):
+        return open(a, 'rb').read() == open(b, 'rb').read()
+
+    def usable(tag):
+        # X.check.mext と X.mext が同じ X.matcha を使うとき、先に保存した同じ中身の X.vN.matcha はそのまま使う
+        if os.path.exists(f'{base}.{tag}.mext'):
+            return False
+        return all(not os.path.exists(f'{os.path.splitext(f)[0]}.{tag}{os.path.splitext(f)[1]}')
+                   or same_file(f, f'{os.path.splitext(f)[0]}.{tag}{os.path.splitext(f)[1]}') for f in files)
+    if args.tag:
+        tag = args.tag
+        if not usable(tag):
+            raise SystemExit(_t('版 {t} のファイルがすでにあり、中身が違います（別の --tag を使う）',
+                                'files for version {t} already exist with different contents (use another --tag)', t=tag))
+    else:
+        k = 1
+        while not usable(f'v{k}'):
+            k += 1
+        tag = f'v{k}'
     mapping = {}
     for f in files:
         b, ext = os.path.splitext(f)
         dst = f'{b}.{tag}{ext}'
-        if os.path.exists(dst):
-            raise SystemExit(_t('{d} はすでにあります', '{d} already exists', d=dst))
-        shutil.copyfile(f, dst)
+        if not os.path.exists(dst):
+            shutil.copyfile(f, dst)
         mapping[os.path.basename(f)] = os.path.basename(dst)
     dst_mext = f'{base}.{tag}.mext'
     txt = open(args.file, encoding='utf-8').read()
@@ -1457,6 +1495,7 @@ def add_parsers(sub):
     p.add_argument('--target', action='append', help='対象の結論（何度でも指定できる。既定は懐疑的帰結と、一部の Extension でだけ成り立つ結論） / target conclusion (repeatable)')
     p.add_argument('--size', default='auto', help="同時に外す前提の数の上限（整数か auto） / max number of premises removed together (integer or auto)")
     p.add_argument('--facts', action='store_true', help='Matcha の事実（W）も候補にする / also use the facts in W as candidates')
+    p.add_argument('--full', action='store_true', help='組を省略せずにすべて示す / list every set without abbreviation')
     p.add_argument('-o', '--output')
     p = sub.add_parser('summary', help='一画面の要約 / one-screen summary of final conclusions, decisive premises and the scope of verification')
     p.add_argument('file')
