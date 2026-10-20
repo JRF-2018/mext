@@ -1367,6 +1367,10 @@ def cmd_audit(args):
     print(_t('# 手順の点検: {f}\n', '# Procedure audit: {f}\n', f=os.path.basename(args.file)))
     print(_t('（mext audit の出力。✗ は手順の抜け。なくすか、なくせない理由をレポートに書く。－ は当てはまらないか、任意のもの）\n',
             '(output of mext audit. ✗ marks a gap in the procedure: fix it, or state in the report why it cannot be fixed. － means not applicable or optional)\n'))
+    print(_t('**✓ は手順が記録されていることを示すだけで、書き起こしや審査の妥当性を保証しない。**'
+             '書き起こしが原文を適切に写しているか、評価が妥当かは、人や別の AI が原文と照らして確かめる。\n',
+             '**A ✓ only shows that a step was recorded; it does not guarantee that the transcription or the reviews are sound.** '
+             'Whether the transcription renders the source faithfully, and whether the evaluations are right, must be checked against the source by a person or another AI.\n'))
     print(_t('| 結果 | 項目 | 内容 |\n|---|---|---|', '| result | item | detail |\n|---|---|---|'))
     for r, item, msg in rows:
         print(f'| {mark[r]} | {item} | {esc(msg)} |')
