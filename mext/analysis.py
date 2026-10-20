@@ -60,6 +60,11 @@ def status(l, sk, cr):
     return 'none'
 
 
+def kept(st, mode):
+    """感度分析で結論が「残っている」か。mode が 'holds' なら懐疑的に、'credulous' なら少なくとも一つの preferred Extension で"""
+    return st == 'holds' or (mode == 'credulous' and st == 'credulous')
+
+
 class _L(dict):
     """値が (日本語, 英語) の辞書。出力の言語に合わせて返す"""
     def __getitem__(self, k):
@@ -194,6 +199,8 @@ def sensitivity(th, targets=None, size='auto', facts=False):
     sk0, cr0, n0, p0 = consequences(th)
     if targets is None:
         targets = default_targets(th, sk0)
+        # 一部の Extension でだけ成り立つ結論も対象にする（その結論が成り立つ読みの中での依存を見るため）
+        targets += [l for l in sorted(cr0, key=abs) if l not in sk0 and th.by_id[abs(l)].kind == 'concl' and l not in targets]
     cands = candidates(th, facts)
     auto = size == 'auto'
     pool = cands
@@ -226,20 +233,22 @@ def sensitivity(th, targets=None, size='auto', facts=False):
            'n_ext': n0, 'n_pref': p0, 'per': {}}
     by_id = {c.id: c for c in cands}
     for l in targets:
-        if base[l] != 'holds':
+        if base[l] not in ('holds', 'credulous'):
             out['per'][l] = None
             continue
+        # 一部の Extension でだけ成り立つ結論は、成り立つ Extension が一つもなくなる組を探す（その読みの中での依存）
+        mode = base[l]
         # 結論を直接導く唯一の主張（own）は、外せば結論が消えるのが当然なので、経路の探索では固定して残す
         own = {c.id for c in cands if c.kind == 'claim' and l in th.defaults[c.key[1]].concl}
-        own = {x for x in own if status(l, *results[frozenset([x])]) != 'holds'}   # それ一つで結論が消える、自明な場合だけ
+        own = {x for x in own if not kept(status(l, *results[frozenset([x])]), mode)}   # それ一つで結論が消える、自明な場合だけ
         free = [c for c in cands if c.id not in own]
-        fsupport = minimal_support(th, l, free)
+        fsupport = minimal_support(th, l, free, mode)
         support = idsort(fsupport + sorted(own))
         explored = grid_desc
         supports = [frozenset(fsupport)]
-        killers = [ids for ids in grid if status(l, *results[ids]) != 'holds']
+        killers = [ids for ids in grid if not kept(status(l, *results[ids]), mode)]
         if auto and fsupport and not [K for K in killers if not (K & own)]:
-            deep, supports, k = deep_search(th, l, free, fsupport, gsize, run)
+            deep, supports, k = deep_search(th, l, free, fsupport, gsize, run, mode)
             killers += deep
             explored += _t('、支持の組 {n} 通りのすべてと交わる組を大きさ {k} まで', '; sets meeting all {n} support sets up to size {k}', n=len(supports), k=k)
         minimal = [S for S in killers if not any(T < S for T in killers)]
@@ -317,7 +326,7 @@ def path_note(p, res):
               'The AI has not judged whether the paths are independent in content (no shared point of contention; [ai] concern / distinct)')
 
 
-def deep_search(th, l, cands, first_support, gsize, run):
+def deep_search(th, l, cands, first_support, gsize, run, mode='holds'):
     """依存が見つからない結論について、支持の組を集めながら、そのすべてと交わる組（hitting set）を試す。
     結論を消す組は、すべての支持の組と交わる必要がある（単調な部分について）。見つかった反例（外しても結論が残る組）
     からは、それを避ける新しい支持の組を作って加える。戻り値: (結論を消す組, 支持の組の一覧, 調べた大きさ)"""
@@ -338,10 +347,10 @@ def deep_search(th, l, cands, first_support, gsize, run):
             for h in hs:
                 tested.add(h)
                 sk, cr = run([by_id[x] for x in h])
-                if status(l, sk, cr) != 'holds':
+                if not kept(status(l, sk, cr), mode):
                     killers.append(h)
                     continue
-                S = support_avoiding(th, l, cands, h, run)
+                S = support_avoiding(th, l, cands, h, run, mode)
                 if S is not None and frozenset(S) not in supports:
                     supports.append(frozenset(S))
                     grew = True
@@ -353,29 +362,29 @@ def deep_search(th, l, cands, first_support, gsize, run):
     return killers, supports, k
 
 
-def support_avoiding(th, l, cands, excluded, run):
+def support_avoiding(th, l, cands, excluded, run, mode='holds'):
     """excluded を外したうえで、なお l が残る候補の極小の組（なければ None）"""
     pool = [c for c in cands if c.id not in excluded]
     out = set(excluded)
     sk, cr = run([c for c in cands if c.id in out])
-    if status(l, sk, cr) != 'holds':
+    if not kept(status(l, sk, cr), mode):
         return None
     keep = list(pool)
     for c in list(pool):
         trial = [x for x in keep if x is not c]
         sk, cr = run([x for x in cands if x not in trial])
-        if status(l, sk, cr) == 'holds':
+        if kept(status(l, sk, cr), mode):
             keep = trial
     return [c.id for c in keep]
 
 
-def minimal_support(th, l, cands):
+def minimal_support(th, l, cands, mode='holds'):
     """l が懐疑的帰結に残る、候補の極小の組を一つ（候補の順に外せるものを外していく）"""
     keep = list(cands)
     for c in list(cands):
         trial = [x for x in keep if x is not c]
         sk, cr, _, _ = consequences(drop(th, [x for x in cands if x not in trial]))
-        if status(l, sk, cr) == 'holds':
+        if kept(status(l, sk, cr), mode):
             keep = trial
     return [c.id for c in keep]
 
@@ -472,7 +481,7 @@ def sensitivity_md(th, res, path):
         pn = path_note(p, res)
         if pn and is_product(p):
             groups += _t('。', '. ') + pn
-        out.append(f'| {esc(th.lit_text(l))} | {STATUS_JA["holds"]} | {ids(p["singles"])} | {groups} | {ids(p["flips"])} | {ids(p["support"])} | {p["explored"]} |')
+        out.append(f'| {esc(th.lit_text(l))} | {STATUS_JA[res["base"][l]]} | {ids(p["singles"])} | {groups} | {ids(p["flips"])} | {ids(p["support"])} | {p["explored"]} |')
     # 疑わしい評価への依存: 単独で必要なものと、組の一員にすぎないものを分ける
     dep1, depg = {}, {}
     for l in res['targets']:
@@ -513,7 +522,7 @@ def sensitivity_md(th, res, path):
                 _t('| 争点 | 前提 | まとめて外すと成り立たなくなる結論 | 理由（AI） |', '| point | premises | conclusions defeated when all are removed | reason (AI) |'),
                 '|---|---|---|---|']
         for c in res['concerns']:
-            lost = [l for l, st in c['status'].items() if res['base'][l] == 'holds' and st != 'holds']
+            lost = [l for l, st in c['status'].items() if kept(res['base'][l], 'credulous') and not kept(st, res['base'][l])]
             out.append(f'| {esc(c["name"])} | {", ".join(c["ids"])} | '
                        + esc(J(Q(th.lit_text(l)) for l in lost) or _t('（なし）', '(none)')) + f' | {esc(c["note"])} |')
     if res.get('distincts'):
@@ -801,7 +810,7 @@ def summary_md(th, mf, path):
     sk, cr = sk or set(), cr or set()
     # 最終的な結論ごとに、成り立つ側（結論か、その否定）を調べる
     shown = list(dict.fromkeys((-l if -l in sk else l) for l in sc['finals']))   # 結論とその否定が両方とも最終的な結論のときは一行にする
-    targets = [l for l in shown if l in sk] or None
+    targets = [l for l in shown if l in sk or l in cr] or None
     res = sensitivity(th, targets)
     cands = {c.id: c for c in res['cands']}
     out = [_t('# 要約: {f}', '# Summary: {f}', f=os.path.basename(path)), '',
@@ -871,9 +880,11 @@ def summary_md(th, mf, path):
             ins = [f'E{i}' for i, (E, pp) in enumerate(zip(exts, pref), 1) if pp and E != INCONSISTENT and l in E]
             outs = [f'E{i}' for i, (E, pp) in enumerate(zip(exts, pref), 1) if pp and E != INCONSISTENT and l not in E]
             notes.append(_t('preferred Extension が分かれている（{a} では成り立ち、{b} では成り立たない）。対立する主張のあいだで優先が決まらない。'
-                            '原文がどちらかを優先しているかを確かめる（優先していれば :: 優先 で書く。決着をつけていなければ、それが原文の論証の状態である）',
+                            '原文がどちらかを優先しているかを確かめる（優先していれば :: 優先 で書く。決着をつけていなければ、それが原文の論証の状態である）。'
+                            '決め手の列は、外すと成り立つ preferred Extension が一つもなくなる前提（その読みの中での依存）',
                             'the preferred Extensions split (it holds in {a} but not in {b}): no priority settles the conflicting claims. '
-                            'Check whether the source prefers one side (if so, write :: priority; if it leaves the question open, that is the state of its argument)',
+                            'Check whether the source prefers one side (if so, write :: priority; if it leaves the question open, that is the state of its argument). '
+                            'The decisive column lists premises whose removal leaves no preferred Extension containing it (dependencies within that reading)',
                             a=', '.join(ins), b=', '.join(outs)))
         elif st0 != 'holds':
             notes.append(_t('成り立たない理由（要件の不足、例外による阻却、対立する主張など）は mext explain でたどれる',
@@ -934,7 +945,7 @@ def summary_md(th, mf, path):
     if res.get('concerns'):
         out += ['', _t('## 争点のまとまり（[ai] の concern）', '## Shared points of contention ([ai] concern)'), '']
         for c in res['concerns']:
-            lost = [l for l in finals if res['base'].get(l) == 'holds' and c['status'].get(l) != 'holds']
+            lost = [l for l in finals if kept(res['base'].get(l), 'credulous') and not kept(c['status'].get(l), res['base'].get(l))]
             out.append(f'- {q(c["name"])} ({", ".join(c["ids"])}): '
                        + (_t('まとめて崩すと、最終的な結論 {x} が成り立たなくなる', 'defeating them all defeats the final conclusion {x}', x=names(lost)) if lost
                           else _t('まとめて崩しても、最終的な結論はどれも成り立ったまま', 'defeating them all leaves every final conclusion standing')))
@@ -1414,7 +1425,7 @@ def cmd_audit(args):
 def add_parsers(sub):
     p = sub.add_parser('sensitivity', help='感度分析: 前提を外すと、どの結論が成り立たなくなるか / sensitivity: which conclusions fail when premises are removed')
     p.add_argument('file')
-    p.add_argument('--target', action='append', help='対象の結論（何度でも指定できる。既定は懐疑的帰結の結論すべて） / target conclusion (repeatable)')
+    p.add_argument('--target', action='append', help='対象の結論（何度でも指定できる。既定は懐疑的帰結と、一部の Extension でだけ成り立つ結論） / target conclusion (repeatable)')
     p.add_argument('--size', default='auto', help="同時に外す前提の数の上限（整数か auto） / max number of premises removed together (integer or auto)")
     p.add_argument('--facts', action='store_true', help='Matcha の事実（W）も候補にする / also use the facts in W as candidates')
     p.add_argument('-o', '--output')

@@ -102,8 +102,9 @@ class Reading:
         return analysis.status(l, self.sk, self.cr)
 
     def analyze(self, extra_targets):
-        targets = list(dict.fromkeys([l for l in self.finals if l in self.sk] +
-                                     [l if l in self.sk else -l for l in extra_targets if l in self.sk or -l in self.sk]))
+        held = self.sk | self.cr          # 一部の Extension でだけ成り立つ結論も、その読みの中での依存を見る
+        targets = list(dict.fromkeys([l for l in self.finals if l in held] +
+                                     [l if l in held else -l for l in extra_targets if l in held or -l in held]))
         self.res = analysis.sensitivity(self.th, targets or None)
         self.by_id = {c.id: c for c in self.res['cands']}
         self.crow = analysis.connective_sensitivity(self.th, self.mf)
@@ -111,7 +112,8 @@ class Reading:
 
     def per(self, l):
         """結論 l（成り立つ側）の依存"""
-        side = l if l in self.sk else (-l if -l in self.sk else l)
+        held = self.sk | self.cr
+        side = l if l in self.sk else (-l if -l in self.sk else (l if l in held else (-l if -l in held else l)))
         p = self.res['per'].get(side) if self.res else None
         conn = [r for r in self.crow if self.th.lit_text(side) in r['final_hit'] or self.th.lit_text(side) in r['lost'] + r['gained']]
         return side, p, conn
@@ -255,6 +257,12 @@ def compare_md(A, B, cf=None, cpath=None):
             diff.append(_t('決め手があるのは {s} だけ', 'only {s} has decisive premises', s='A' if ea else 'B'))
         if patha != pathb and (patha or pathb):
             diff.append(_t('独立した経路 A {a}・B {b}', 'independent paths A {a}, B {b}', a=patha or '—', b=pathb or '—'))
+            for side, R, p_, n_ in (('A', A, pa_, patha), ('B', B, pb_, pathb)):
+                shared_c = [c['name'] for c in R.res.get('concerns', [])
+                            if n_ and all(set(c['ids']) & S for S in p_.get('supports', []) if S)]
+                if shared_c:
+                    diff.append(_t('{s} の経路は争点「{c}」を共有する（[ai] concern。内容の上の弱点は一つ）',
+                                   'the paths in {s} share the point of contention “{c}” ([ai] concern: one weakness in content)', s=side, c=shared_c[0]))
         ra = [r for r in conn_a if r['record'] != '明示']
         rb = [r for r in conn_b if r['record'] != '明示']
         if bool(ra) != bool(rb):

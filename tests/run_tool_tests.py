@@ -269,6 +269,14 @@ with contextlib.redirect_stdout(io.StringIO()) as buf:
     core.cmd_verify(type('A', (), {'file': os.path.join(TC, 'ascii_quote.mext'), 'skeptical': False})())
 check('[claimed]: \'…\' で書いた予測を検証できる', 'OK' in buf.getvalue(), buf.getvalue())
 
+# --- 一部の Extension でだけ成り立つ結論の依存（その読みの中で）
+th = theory(os.path.join(TC, 'claim_views.mext'))
+res = analysis.sensitivity(th)
+l = core.lit_from_text(th, '神は一人一人に最良の結果をもたらそうと努める')
+p = res['per'].get(l)
+check('sensitivity: 一部の Extension でだけ成り立つ結論も対象にし、成り立つ Extension がなくなる前提を示す',
+      p is not None and res['base'][l] == 'credulous' and any(res['cands'][int(x[1:]) - 1].kind == 'claim' for x in p['singles']), str(p))
+
 # --- compare（読みの比較）
 from mext import compare
 cf = compare.CompareFile(os.path.join(TC, 'views.compare')).load()

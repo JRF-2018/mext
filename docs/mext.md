@@ -149,7 +149,7 @@ mext compare A.vs.B.compare [-o 出力.md]      # 読みの比較（0.5.0 以降
 mext compare A.mext B.mext [-m A.vs.B.compare]
 ```
 
-**感度分析（sensitivity）**: 争いうる前提を外した理論の Extension を計算し直す。外す候補は、評価・論点・理由・`[extra]` のデフォルト、主張（その規範を採らないこと）、`[extra]` で足した事実である（`--facts` で Matcha の事実も加える）。外した評価は、`review reject` と同じ扱いになる。結論ごとに次を示す。「成り立つ」は、すべての preferred Extension に含まれること（懐疑的帰結）である。
+**感度分析（sensitivity）**: 争いうる前提を外した理論の Extension を計算し直す。外す候補は、評価・論点・理由・`[extra]` のデフォルト、主張（その規範を採らないこと）、`[extra]` で足した事実である（`--facts` で Matcha の事実も加える）。外した評価は、`review reject` と同じ扱いになる。結論ごとに次を示す。「成り立つ」は、すべての preferred Extension に含まれること（懐疑的帰結）である。一部の preferred Extension でだけ成り立つ結論（0.5.1 以降）は、成り立つ preferred Extension が一つもなくなることを「成り立たなくなる」と数える（その結論が成り立つ読みの中での依存）。
 
 - 単独で外すと成り立たなくなる前提
 - 組で外すと成り立たなくなる極小の組（`--size` まで）。同じ結論への独立した経路が複数あるときに現れる
