@@ -131,6 +131,11 @@ class Reading:
         }
 
 
+def covered(f, matched, finals):
+    """最終的な結論 f が対応づけ済みか。同じ命題の反対の側で対応づけた場合も、反対の側が別の最終的な結論でなければ済みとする"""
+    return f in matched or (-f in matched and -f not in finals)
+
+
 def pair_matches(cf, A, B):
     """[match] の行と、文言が同じものの自動の対応づけ。(結論の対応, 前提の対応, 解決できなかった行)"""
     concl, prem, bad = [], [], []
@@ -139,8 +144,8 @@ def pair_matches(cf, A, B):
         la, lb = A.lit(ta), B.lit(tb)
         if la is not None and lb is not None:
             concl.append((la, lb, note or _t('（理由なし）', '(no reason given)'), 'match'))
-            seen_a.add(abs(la))
-            seen_b.add(abs(lb))
+            seen_a.add(la)
+            seen_b.add(lb)
             continue
         ca, cb = (A.cand(ta) if la is None else None), (B.cand(tb) if lb is None else None)
         if ca is not None and cb is not None:
@@ -155,17 +160,17 @@ def pair_matches(cf, A, B):
             why.append(_t('一方は結論、他方は前提', 'one is a conclusion and the other a premise'))
         bad.append((i, ta, tb, join(why)))
     # 自動: 〔対象〕を除いた文言が同じ最終的な結論
+    # 肯定と否定は別の結論として扱う（「X」と「¬X」がどちらも最終的な結論のことがある）
     bmap = {}
     for l in B.finals:
-        bmap.setdefault(base_text(B.th.lit_text(abs(l))), abs(l))
+        bmap.setdefault((l > 0, base_text(B.th.lit_text(abs(l)))), l)
     for l in A.finals:
-        if abs(l) in seen_a:
+        if covered(l, seen_a, A.finals):
             continue
-        k = base_text(A.th.lit_text(abs(l)))
-        lb = bmap.get(k)
-        if lb is not None and lb not in seen_b:
-            concl.append((abs(l), lb, _t('文言が同じ（自動）', 'same text (automatic)'), 'auto'))
-            seen_a.add(abs(l))
+        lb = bmap.get((l > 0, base_text(A.th.lit_text(abs(l)))))
+        if lb is not None and not covered(lb, seen_b, B.finals):
+            concl.append((l, lb, _t('文言が同じ（自動）', 'same text (automatic)'), 'auto'))
+            seen_a.add(l)
             seen_b.add(lb)
     # 自動: 文言が同じ前提
     have = {(ca.text, cb.text) for ca, cb, _, _ in prem}
@@ -283,10 +288,10 @@ def compare_md(A, B, cf=None, cpath=None):
     out.append(_t('対応 {n} 組のうち、成否が違うもの {d} 組。', '{d} of {n} corresponding pairs differ in status.', n=len(concl), d=n_diff_status))
     out.append('')
     # 3. 対応のない最終的な結論
-    ma = {abs(la) for la, _, _, _ in concl}
-    mb = {abs(lb) for _, lb, _, _ in concl}
-    ua = [l for l in A.finals if abs(l) not in ma]
-    ub = [l for l in B.finals if abs(l) not in mb]
+    ma = {la for la, _, _, _ in concl}
+    mb = {lb for _, lb, _, _ in concl}
+    ua = [l for l in A.finals if not covered(l, ma, A.finals)]
+    ub = [l for l in B.finals if not covered(l, mb, B.finals)]
     out += [_t('## 3. 対応のない最終的な結論', '## 3. Final conclusions with no counterpart'), '',
             _t('一方の読みにしかない結論は、もう一方が書き起こさなかったか、別の形（中間の結論、前提、別の命題）で書いたものである。'
                '対応するものがあれば [match] に書く。',
@@ -339,8 +344,8 @@ def template(A, B, out_path):
     """比較のファイルのひな形: 自動の対応と、対応のない最終的な結論を注として並べる"""
     base = os.path.dirname(os.path.abspath(out_path))
     concl, prem, _ = pair_matches(None, A, B)
-    ma = {abs(la) for la, _, _, _ in concl}
-    mb = {abs(lb) for _, lb, _, _ in concl}
+    ma = {la for la, _, _, _ in concl}
+    mb = {lb for _, lb, _, _ in concl}
     lines = ['@mext-compare 1',
              f'a: {os.path.relpath(os.path.abspath(A.path), base)}',
              f'b: {os.path.relpath(os.path.abspath(B.path), base)}',
@@ -351,12 +356,12 @@ def template(A, B, out_path):
              _t('; 文言が同じ（〔対象〕を除いて同じ）最終的な結論と、文言が同じ前提は、自動で対応づける（ここに書かなくてよい）。',
                 '; Final conclusions with the same text (ignoring 〔target〕) and premises with the same text are matched automatically.'),
              '', '[match]']
-    ua = [abs(l) for l in A.finals if abs(l) not in ma]
-    ub = [abs(l) for l in B.finals if abs(l) not in mb]
+    ua = [l for l in A.finals if not covered(l, ma, A.finals)]
+    ub = [l for l in B.finals if not covered(l, mb, B.finals)]
     sugg = []
     for la in ua:
         ta = base_text(A.th.lit_text(la))
-        best = max(((difflib.SequenceMatcher(None, ta, base_text(B.th.lit_text(lb))).ratio(), lb) for lb in ub), default=None)
+        best = max(((difflib.SequenceMatcher(None, ta, base_text(B.th.lit_text(lb))).ratio(), lb) for lb in ub if (lb > 0) == (la > 0)), default=None)
         if best and best[0] >= 0.6:
             sugg.append((best[0], la, best[1]))
     if sugg:

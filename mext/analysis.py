@@ -803,6 +803,17 @@ def short(c, n=36):
     return f'{c.id} {t}{mark}' if _en() else f'{c.id}{t}{mark}'
 
 
+def review_note(th, c):
+    """候補（評価）に効いた [ai] review の理由（別名で書いたものも）"""
+    if not c.kind.startswith('eval'):
+        return ''
+    ev = c.text.rsplit('@', 1)[-1]
+    for key, (st, note) in getattr(th, 'reviews', {}).items():
+        if key == c.text or key == '@' + ev or core.lit_from_text(th, key) == core.lit_from_text(th, c.text):
+            return note
+    return ''
+
+
 def summary_md(th, mf, path):
     exts, pref, _ = core.solve(th)
     sc = core.scope(th, exts, pref)
@@ -918,6 +929,9 @@ def summary_md(th, mf, path):
         tf = trial_files(path, c.text)
         if tf:
             nav.append(_t('試算: ', 'trials: ') + join(tf))
+        why = review_note(th, c)
+        if why:
+            parts.append(_t('AI の理由: {w}', 'AI’s reason: {w}', w=why if len(why) <= 80 else why[:79] + '…'))
         out.append(f'- {short(c, 50)}: ' + _t('。', '. ').join(parts) + ((_t('（{n}）', ' ({n})', n=" / ".join(nav))) if nav else ''))
     if len(ranked) > 8:
         out.append(_t('- ほか {n} 個（mext sensitivity の「AI が doubtful とした評価」を見る）',
@@ -1006,8 +1020,8 @@ def evals_in(n):
 
 
 REPORT_RE = re.compile(
-    r'(と|として|を)(説明|判断|解釈|主張|考え|述べ|論じ|指摘|評価)(する|できる|している|した|される|がある|もできる|も可能)'
-    r'|という(判断|見方|考え|解釈|立場|見解|主張)(がある|もある|もできる|をとる|を示す)|(著者|筆者)(は|の判断|の見方)|(解釈|考え|説明)も(でき|可能)'
+    r'(と|として|を|で)(説明|判断|解釈|主張|考え|述べ|論じ|指摘|評価)(する|できる|している|した|される|がある|もできる|も可能)'
+    r'|という(判断|見方|考え|解釈|立場|見解|主張)(がある|もある|もできる|をとる|を示す)|(著者|筆者)(は|の判断|の見方)|(解釈|考え|説明)も(でき|可能)|(応答|説明|解釈|回答|答え)(が|も)(なされる|与えられる|示される)'
     r'|\b(the author|the writer|the essay|the article)\b|\b(argues|claims|contends|suggests|explains) that\b'
     r'|\bcan be (read|interpreted|explained) as\b', re.I)
 LEVEL = _L({'警告': ('警告', 'warning'), '情報': ('情報', 'note')})
@@ -1015,7 +1029,8 @@ LINT_NAMES = _L({'同語反復の評価': ('同語反復の評価', 'tautologica
                  '立証の手段のない要件': ('立証の手段のない要件', 'requirement with no means of proof'), '事実の中の評価語': ('事実の中の評価語', 'evaluative words in a fact'),
                  '一段の主張が多い': ('一段の主張が多い', 'many one-step claims'), '行き止まりの主張': ('行き止まりの主張', 'dead-end claims'),
                  'どの Extension にも出ない主張': ('どの Extension にも出ない主張', 'claim in no Extension'),
-                 '報告型の結論': ('報告型の結論', 'reported views as conclusions'), '効いていない判断': ('効いていない判断', 'ineffective judgment'),
+                 '報告型の結論': ('報告型の結論', 'reported views as conclusions'),
+                 '評価に依存する報告': ('評価に依存する報告', 'reports that depend on evaluations'), '効いていない判断': ('効いていない判断', 'ineffective judgment'),
                  '構文': ('構文', 'syntax')})
 
 
@@ -1125,6 +1140,20 @@ def lint(th, mf, exts=None, pref=None):
                        'Reports are compatible with each other, so conflicts do not appear in the theory',
                        n=len(claims), k=len(reported), x=names,
                        o=_t('理論の中に、主張の結論と対立する命題が一つもない。', ' No conclusion of a claim has an opposing proposition in the theory.') if no_opp else '')))
+    # 評価に依存する報告: 報告型の結論（原文にそう書かれている）が、その説明を受け入れる評価を要件にしている。
+    # 評価を外す（review reject・感度分析）と、原文に書かれていることまで消える
+    # $ラベルで前の主張を受けている主張は、報告を受けて評価する形（分けた書き方）なので数えない
+    mixed = [(f, n) for f, n in claims if n.conclusion and REPORT_RE.search(n.conclusion['text'])
+             and (evals_in(n.body) if n.body is not None else []) + (evals_in(n.facts) if n.facts is not None else [])
+             and not (n.body is not None and any(x.kind == 'ref' for x in walk(n.body)))]
+    if mixed:
+        names = join(f'{x.label or x.head} ({at(f, x.line)})' for f, x in mixed[:6]) + ('…' if len(mixed) > 6 else '')
+        out.append((I, _t('全体', 'whole'), '評価に依存する報告',
+                    _t('報告の形の結論が評価を要件にしている主張が {k} 個ある（{x}）。評価を外すと、原文に書かれていること（報告）まで消える。'
+                       '「原文にそう書かれている」と「その説明を受け入れる」を分けるなら、事実だけの報告の主張と、それを $ラベル で受けて評価する主張の二つにする',
+                       '{k} claims conclude with a report but require an evaluation ({x}). Removing the evaluation also removes what the source says '
+                       '(the report). To separate “the source says so” from “the explanation is accepted”, write a report claim with facts only, '
+                       'and a second claim that takes it with $label and evaluates it', k=len(mixed), x=names)))
     # どの Extension にも出ない主張（著者が ! で不成立とした主張は除く）
     failed = {k for k, m, _, _ in th.marks if m == '!'}
     if exts is not None:

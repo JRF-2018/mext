@@ -228,6 +228,10 @@ check('lint: 報告型の結論（対立が一つもない）', '報告型の結
 mf, th, _ = analysis.load(os.path.join(EX, 'analysis', 'kindness_essay', 'kindness_essay.mext'))
 exts, pref, _ = core.solve(th)
 check('lint: $ラベルで受けて評価する報告は数えない', '報告型の結論' not in [x[2] for x in analysis.lint(th, mf, exts, pref)])
+mf, th, _ = analysis.load(os.path.join(TC, 'report_eval.mext'))
+exts, pref, _ = core.solve(th)
+it = [x for x in analysis.lint(th, mf, exts, pref) if x[2] == '評価に依存する報告']
+check('lint: 評価に依存する報告（分けた書き方は数えない）', len(it) == 1 and '1 個' in it[0][3] and '出生 (' in it[0][3], str(it))
 mf, th, _ = analysis.load(os.path.join(EX, 'theft.mext'))
 exts, pref, _ = core.solve(th)
 check('lint: 原典の窃盗罪の例には警告がない', not [x for x in analysis.lint(th, mf, exts, pref) if x[0] == '警告'])
@@ -300,6 +304,14 @@ try:
         compare.template(compare.Reading(os.path.join(TC, 'report_views.mext')), compare.Reading(os.path.join(TC, 'claim_views.mext')), out)
     txt = open(out, encoding='utf-8').read()
     check('compare --init: ひな形に a: b: と対応のない結論を書く', 'a: ' in txt and '[match]' in txt and '"二つの神観のどちらかでなければ矛盾するという著者の判断がある〔著者〕"' in txt)
+    os.remove(out)
+    compare.template(compare.Reading(os.path.join(TC, 'claim_views.mext')), compare.Reading(os.path.join(TC, 'report_views.mext')), out)
+    txt2 = open(out, encoding='utf-8').read()
+    check('compare --init: 結論とその否定を区別して書く', '"神は一人一人に最良の結果をもたらそうと努める〔神〕"' in txt2
+          and '"¬神は一人一人に最良の結果をもたらそうと努める〔神〕"' in txt2, txt2)
+    A3, B3 = compare.Reading(os.path.join(TC, 'claim_views.mext')), compare.Reading(os.path.join(TC, 'claim_views.mext'))
+    md3 = compare.compare_md(A3, B3, None)
+    check('compare: 結論とその否定は別々に自動で対応づける', '対応 2 組のうち' in md3 and 'A だけ（0 個）' in md3, md3[-600:])
     cf3 = compare.CompareFile(out).load()
     check('compare --init: ひな形はそのまま読める', not cf3.errs and os.path.exists(cf3.a), str(cf3.errs))
 finally:
