@@ -142,6 +142,8 @@ class AIDirectives:
         self.failure = set()
         self.effect = set()
         self.review = {}    # 評価デフォルトの文言 "事実@評価" -> (ok|doubtful|reject, 注)
+        self.concerns = {}  # 争点の名前 -> ([前提の文言], 注)。内容の上で一つの争点を共有する前提の組（感度分析で使う）
+        self.distincts = [] # ([前提の文言], 注)。内容の上で互いに独立だと AI が判断した前提の組
         self.extra = []     # (種類, 内容, 注)
         self.raw = []       # 元の行（書き戻し用）
 
@@ -176,6 +178,10 @@ def parse_ai_line(line, ai, lineno, errs):
             ai.effect.add(words[1])
         elif cmd == 'review' and len(words) == 3 and words[2] in ('ok', 'doubtful', 'reject'):
             ai.review[words[1]] = (words[2], note)
+        elif cmd == 'concern' and len(words) >= 4 and not quoted[1] and all(quoted[2:]):
+            ai.concerns[words[1]] = (words[2:], note)
+        elif cmd == 'distinct' and len(words) >= 3 and all(quoted[1:]):
+            ai.distincts.append((words[1:], note))
         else:
             errs.append(f'[ai] {lineno} 行目を解釈できません: {line.strip()}')
     except IndexError:
@@ -961,6 +967,7 @@ def build(mf, use_review=None):
             cands = ', '.join(f'"{th.by_id[abs(l)].text}"' for l in th.aliases[t])
             mf.errs.append(f'[ai] same / neg の「{t}」は原子の文言ではなく別名です。原子の文言（候補: {cands}）で書いてください')
     th.reviews = dict(ai.review)
+    th.concerns, th.distincts = dict(ai.concerns), list(ai.distincts)
     th.docs, th.files = docs, files      # lint などが構文木を参照するため
     th.name_atoms()
     return th, diags
@@ -1067,7 +1074,9 @@ def cmd_init(args):
                 ';   same "代表の文言" "同じ意味の文言"\n'
                 ';   neg  "文言A" "文言B"        … B は A の否定\n'
                 ';   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む\n'
-                ';   review "事実@評価" ok|doubtful|reject\n\n'
+                ';   review "事実@評価" ok|doubtful|reject\n'
+                ';   concern 名 "前提" "前提" …    … 内容の上で一つの争点を共有する前提（感度分析でまとめて外す）\n'
+                ';   distinct "前提" "前提" …      … 内容の上で互いに独立な前提\n\n'
                 '[extra]\n'
                 ';   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2\n\n'
                 '[claimed]\n'

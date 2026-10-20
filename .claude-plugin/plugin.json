@@ -1,6 +1,6 @@
 {
   "name": "mext",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Matcha（法的推論の形式言語）の論証をデフォルト論理として扱うスキル集。mext-analysis（任意の文書の mext分析）、matcha-analysis（文書を Matcha に書き起こす matcha分析）、matcha-default-extensions（.matcha の Extension の計算・検証・Lean 証明・あてはめの審査）",
   "author": { "name": "JRF" },
   "homepage": "https://github.com/JRF-2018/mext",

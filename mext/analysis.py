@@ -151,12 +151,18 @@ def sensitivity(th, targets=None, size='auto', facts=False):
         if base[l] != 'holds':
             out['per'][l] = None
             continue
-        support = minimal_support(th, l, cands)
+        # 結論を直接導く唯一の主張（own）は、外せば結論が消えるのが当然なので、経路の探索では固定して残す
+        own = {c.id for c in cands if c.kind == 'claim' and l in th.defaults[c.key[1]].concl}
+        own = {x for x in own if status(l, *results[frozenset([x])]) != 'holds'}   # それ一つで結論が消える、自明な場合だけ
+        free = [c for c in cands if c.id not in own]
+        fsupport = minimal_support(th, l, free)
+        support = idsort(fsupport + sorted(own))
         explored = f'全候補で大きさ {gsize} まで'
-        supports = [frozenset(support)]
+        supports = [frozenset(fsupport)]
         killers = [ids for ids in grid if status(l, *results[ids]) != 'holds']
-        if auto and not killers and support:
-            killers, supports, k = deep_search(th, l, cands, support, gsize, run)
+        if auto and fsupport and not [K for K in killers if not (K & own)]:
+            deep, supports, k = deep_search(th, l, free, fsupport, gsize, run)
+            killers += deep
             explored += f'、支持の組 {len(supports)} 通りのすべてと交わる組を大きさ {k} まで'
         minimal = [S for S in killers if not any(T < S for T in killers)]
         singles = sorted([next(iter(S)) for S in minimal if len(S) == 1], key=lambda x: int(x[1:]))
@@ -165,6 +171,23 @@ def sensitivity(th, targets=None, size='auto', facts=False):
                         if len(ids) == 1 and status(l, *results[ids]) == 'neg'], key=lambda x: int(x[1:]))
         out['per'][l] = {'singles': singles, 'groups': groups, 'flips': flips, 'support': support,
                          'explored': explored, 'supports': supports}
+    # [ai] の concern（一つの争点を共有する前提の組）を一つの単位として外す
+    out['concerns'], out['distincts'], out['unresolved'] = [], [], []
+    for name, (members, note) in getattr(th, 'concerns', {}).items():
+        cs = [resolve(th, cands, m) for m in members]
+        out['unresolved'] += [m for m, c in zip(members, cs) if c is None]
+        ids = idsort({c.id for c in cs if c})
+        if not ids:
+            continue
+        sk, cr = run([by_id[x] for x in ids])
+        out['concerns'].append({'name': name, 'ids': ids, 'note': note,
+                                'status': {l: status(l, sk, cr) for l in targets}})
+    for members, note in getattr(th, 'distincts', []):
+        cs = [resolve(th, cands, m) for m in members]
+        out['unresolved'] += [m for m, c in zip(members, cs) if c is None]
+        ids = idsort({c.id for c in cs if c})
+        if ids:
+            out['distincts'].append({'ids': ids, 'note': note})
     # 外すと新たに成り立つ結論（非単調性）
     appear = []
     for c in cands:
@@ -175,6 +198,38 @@ def sensitivity(th, targets=None, size='auto', facts=False):
                     appear.append((c.id, l))
     out['appear'] = appear
     return out
+
+
+def resolve(th, cands, text):
+    """[ai] の concern / distinct に書いた文言（評価・主張の文言、ラベル、デフォルト名、候補 ID）から候補を得る"""
+    for c in cands:
+        if text in (c.id, c.text, str(c.label)):
+            return c
+    l = core.lit_from_text(th, text)
+    if l is None:
+        return None
+    for c in cands:
+        if c.key[0] == 'd' and th.defaults[c.key[1]].concl and th.defaults[c.key[1]].concl[0] == l:
+            return c
+        if c.key == ('f', l):
+            return c
+    return None
+
+
+def path_note(p, res):
+    """独立した経路について、[ai] の concern / distinct の判断を添える"""
+    sups = [S for S in p.get('supports', []) if S]
+    if len(sups) < 2 or not p['groups']:
+        return ''
+    for c in res.get('concerns', []):
+        if all(set(c['ids']) & S for S in sups):
+            return (f'ただし、AI の判断で、{len(sups)} つの経路は争点「{c["name"]}」（{", ".join(c["ids"])}）を共有している。'
+                    'この争点一つを崩すと、すべての経路が同時に崩れる（計算の上では経路は複数でも、内容の上の弱点は一つ）')
+    for d in res.get('distincts', []):
+        if all(set(d['ids']) & S for S in sups):
+            return (f'AI の判断で、{len(sups)} つの経路の要（{", ".join(d["ids"])}）は内容の上でも互いに独立である（distinct）。'
+                    '経路は互いに補い合う独立した根拠である')
+    return '経路が内容の上でも独立か（同じ争点を共有していないか）は、AI が判断していない（[ai] の concern / distinct）'
 
 
 def deep_search(th, l, cands, first_support, gsize, run):
@@ -284,24 +339,48 @@ def sensitivity_md(th, res, path):
             out.append(f'| {esc(th.lit_text(l))} | {STATUS_JA[res["base"][l]]} | | | | | |')
             continue
         groups = fmt_groups(p)
+        pn = path_note(p, res)
+        if pn and groups.startswith('独立した'):
+            groups += '。' + pn
         out.append(f'| {esc(th.lit_text(l))} | 成り立つ | {ids(p["singles"])} | {groups} | {ids(p["flips"])} | {ids(p["support"])} | {p["explored"]} |')
-    # 疑わしい評価への依存
-    dep = {}
+    # 疑わしい評価への依存: 単独で必要なものと、組の一員にすぎないものを分ける
+    dep1, depg = {}, {}
     for l in res['targets']:
         p = res['per'][l]
         if not p:
             continue
-        for x in dict.fromkeys(p['singles'] + [y for g in p['groups'] for y in g]):
-            dep.setdefault(x, []).append(l)
+        for x in p['singles']:
+            dep1.setdefault(x, []).append(l)
+        for x in dict.fromkeys(y for g in p['groups'] for y in g):
+            if x not in p['singles']:
+                depg.setdefault(x, []).append(l)
     doubt = [c for c in res['cands'] if c.review in ('doubtful',)]
     out += ['', '## AI が doubtful とした評価', '']
     if not doubt:
         out.append('（なし）')
     for c in doubt:
-        ls = dep.get(c.id, [])
-        out.append(f'- {c.id}「{c.text}」: ' + ('次の結論がこれに依存する（外すと成り立たなくなる）: '
-                                              + '、'.join(f'「{th.lit_text(l)}」' for l in ls) if ls
-                                              else f'調べた範囲（全候補で大きさ {res["size"]} までの組など。表の「調べた範囲」の列）では、これを外しても対象の結論はどれも成り立ったまま。より大きな組で効く可能性は残る'))
+        parts = []
+        if c.id in dep1:
+            parts.append('**単独で外すと成り立たなくなる**: ' + '、'.join(f'「{th.lit_text(l)}」' for l in dep1[c.id]))
+        if c.id in depg:
+            parts.append('組の一員（これ一つを外しても残るが、これを含む組を外すと成り立たなくなる）: '
+                         + '、'.join(f'「{th.lit_text(l)}」' for l in depg[c.id]))
+        if not parts:
+            parts.append(f'調べた範囲（表の「調べた範囲」の列）では、これを外しても対象の結論はどれも成り立ったまま。'
+                         'より大きな組で効く可能性は残る')
+        out.append(f'- {c.id}「{c.text}」: ' + '。'.join(parts))
+    if res.get('concerns'):
+        out += ['', '## 争点のまとまり（[ai] の concern）', '',
+                '| 争点 | 前提 | まとめて外すと成り立たなくなる結論 | 理由（AI） |', '|---|---|---|---|']
+        for c in res['concerns']:
+            lost = [l for l, st in c['status'].items() if res['base'][l] == 'holds' and st != 'holds']
+            out.append(f'| {esc(c["name"])} | {", ".join(c["ids"])} | '
+                       + esc('、'.join(f'「{th.lit_text(l)}」' for l in lost) or '（なし）') + f' | {esc(c["note"])} |')
+    if res.get('distincts'):
+        out += ['', '## 互いに独立とされた前提（[ai] の distinct）', '']
+        out += [f'- {", ".join(d["ids"])}: {d["note"]}' for d in res['distincts']]
+    if res.get('unresolved'):
+        out += ['', '**[ai] の concern / distinct で、候補に当たらなかった文言**: ' + '、'.join(f'「{m}」' for m in res['unresolved'])]
     out += ['', '## 外すと新たに成り立つ結論（非単調性）', '']
     if not res['appear']:
         out.append('（なし）')
@@ -371,15 +450,24 @@ def summary_md(th, mf, path):
             keys = '、'.join(short(c, 24) for c in ev[:3]) + (f' ほか {len(ev) - 3}' if len(ev) > 3 else '') if ev else '—'
             if p['groups']:
                 g = fmt_groups(p, limit=3)
-                notes.append(g if g.startswith('独立した') else '組で外すと成り立たなくなる: ' + g)
+                if g.startswith('独立した'):
+                    notes.append(g)
+                    pn = path_note(p, res)
+                    if pn:
+                        notes.append(pn)
+                else:
+                    notes.append('組で外すと成り立たなくなる: ' + g)
             if not p['singles'] and not p['groups']:
                 notes.append('調べた範囲では、外すと成り立たなくなる前提はない（W の事実と、反論が立証されていないことから出ている）'
                              if not p['support'] else f'調べた範囲（{p["explored"]}）では見つからない')
             if any(c.review == 'doubtful' for c in singles):
                 notes.append('doubtful の評価に依存')
-            for x in p['singles'] + [y for g2 in p['groups'] for y in g2]:
+            for x in p['singles']:
                 if cands[x].kind == 'eval' and cands[x].review in ('doubtful', ''):
-                    contested.setdefault(x, []).append(l)
+                    contested.setdefault(x, {'1': [], 'g': []})['1'].append(l)
+            for x in dict.fromkeys(y for g2 in p['groups'] for y in g2):
+                if x not in p['singles'] and cands[x].kind == 'eval' and cands[x].review in ('doubtful', ''):
+                    contested.setdefault(x, {'1': [], 'g': []})['g'].append(l)
         if not core.opposed(th, l):
             notes.append('反対の根拠が理論にない')
         out.append(f'| {esc(th.lit_text(l))} | {st} | {opp} | {esc(keys)} | {esc("。".join(notes))} |')
@@ -388,13 +476,28 @@ def summary_md(th, mf, path):
     out += ['', '## 争点（最終的な結論が依存している、doubtful または未審査の評価）', '']
     if not contested:
         out.append('（なし）')
-    ranked = sorted(contested.items(), key=lambda kv: (-len(set(kv[1])), int(kv[0][1:])))
-    for x, ls in ranked[:8]:
+    ranked = sorted(contested.items(), key=lambda kv: (-len(kv[1]['1']), -len(kv[1]['g']), int(kv[0][1:])))
+
+    def names(ls):
         ls = list(dict.fromkeys(ls))
-        out.append(f'- {short(cands[x], 50)}: 最終的な結論 {len(ls)} 個が依存する（「{th.lit_text(ls[0])}」'
-                   + (f' ほか {len(ls) - 1} 個' if len(ls) > 1 else '') + '）')
+        return f'「{th.lit_text(ls[0])}」' + (f' ほか {len(ls) - 1} 個' if len(ls) > 1 else '')
+    for x, d in ranked[:8]:
+        parts = []
+        if d['1']:
+            parts.append(f'単独で外すと {names(d["1"])} が成り立たなくなる')
+        if d['g']:
+            parts.append(f'組の一員として {names(d["g"])} を支える（これ一つを外しても残る）')
+        out.append(f'- {short(cands[x], 50)}: ' + '。'.join(parts))
     if len(ranked) > 8:
         out.append(f'- ほか {len(ranked) - 8} 個（mext sensitivity の「AI が doubtful とした評価」を見る）')
+    if res.get('concerns'):
+        out += ['', '## 争点のまとまり（[ai] の concern）', '']
+        for c in res['concerns']:
+            lost = [l for l in finals if res['base'].get(l) == 'holds' and c['status'].get(l) != 'holds']
+            out.append(f'- 「{c["name"]}」（{", ".join(c["ids"])}）: まとめて崩すと、最終的な結論 '
+                       + (names(lost) + ' が成り立たなくなる' if lost else 'はどれも成り立ったまま'))
+    if res.get('unresolved'):
+        out.append('\n**[ai] の concern / distinct で、候補に当たらなかった文言**: ' + '、'.join(f'「{m}」' for m in res['unresolved']))
     return '\n'.join(out)
 
 

@@ -52,7 +52,45 @@ check('sensitivity: 独立した経路を積の形でまとめる', analysis.fmt
 res2 = analysis.sensitivity(th, size=2)
 check('sensitivity: --size 2 では見つからない（調べた範囲の明記が必要な場合）', not res2['per'][l]['groups'])
 
+th = theory(os.path.join(TC, 'or_paths.mext'))
+res = analysis.sensitivity(th)
+l = core.lit_from_text(th, '人を殺してはいけない')
+p = res['per'][l]
+check('sensitivity: 結論を直接導く主張があっても、経路の組を探す', len(p['groups']) == 8 and len(p['singles']) == 1, str(p))
+md = analysis.sensitivity_md(th, res, 'or_paths.mext')
+check('sensitivity: 経路の独立性が未判断であることを示す', 'AI が判断していない' in md)
+
+# concern / distinct（[ai] の行を足した写しで試す）
+d = tempfile.mkdtemp()
+try:
+    shutil.copy(os.path.join(TC, 'or_paths.matcha'), d)
+    ev = ['"殺し合えば分業が止まる@協働が損なわれる理由になる"', '"殺せば危険視される@信用を失う理由になる"',
+          '"他者は将来助けてくれるかもしれない@他者を生かす理由になる"']
+    for name, line in (('c', 'concern 便益から義務へ ' + ' '.join(ev) + '  ; 同じ型の橋渡し'),
+                       ('d', 'distinct ' + ' '.join(ev) + '  ; 別の型の理由')):
+        txt = open(os.path.join(TC, 'or_paths.mext'), encoding='utf-8').read().replace('[ai]\n', '[ai]\n' + line + '\n', 1)
+        f = os.path.join(d, f'or_paths_{name}.mext')
+        open(f, 'w', encoding='utf-8').write(txt)
+        th = theory(f)
+        res = analysis.sensitivity(th)
+        md = analysis.sensitivity_md(th, res, f)
+        if name == 'c':
+            c = res['concerns'][0]
+            check('concern: 争点をまとめて崩すと結論が成り立たなくなる', c['status'][l] != 'holds', str(c))
+            check('concern: 経路が争点を共有することを示す', '争点「便益から義務へ」' in md and '内容の上の弱点は一つ' in md)
+        else:
+            check('distinct: 経路が互いに独立であることを示す', '互いに補い合う独立した根拠' in md)
+        check(f'concern / distinct: 文言がすべて候補に当たる（{name}）', not res['unresolved'], str(res['unresolved']))
+finally:
+    shutil.rmtree(d)
+
+# doubtful 一覧: 単独で必要なものと組の一員を分ける
+th = theory(os.path.join(EX, 'sublease.mext'))
+md = analysis.sensitivity_md(th, analysis.sensitivity(th), 'sublease.mext')
+check('sensitivity: 組の一員を「単独で外すと」と書かない', '組の一員' in md or '単独で外すと成り立たなくなる**' not in md)
+
 # --- 検証の範囲
+th = theory(os.path.join(TC, 'three_paths.mext'))
 exts, pref, _ = core.solve(th)
 sc = core.scope(th, exts, pref)
 check('scope: 対立する命題のない最終的な結論を数える', len(sc['finals']) == 1 and len(sc['unopposed']) == 1, str(sc))
