@@ -1,10 +1,18 @@
 {
   "name": "mext",
-  "version": "0.3.5",
-  "description": "Matcha（法的推論の形式言語）の論証をデフォルト論理として扱うスキル集。mext-analysis（任意の文書の mext分析）、matcha-analysis（文書を Matcha に書き起こす matcha分析）、matcha-default-extensions（.matcha の Extension の計算・検証・Lean 証明・あてはめの審査）",
-  "author": { "name": "JRF" },
+  "version": "0.4.0",
+  "description": "Matcha（法的推論の形式言語）の論証をデフォルト論理として扱うスキル集 / Skills that read Matcha legal-reasoning code as default logic: mext-analysis (analyze the argument of any document), matcha-analysis (transcribe a document into Matcha), matcha-default-extensions (Extensions, verification, Lean proofs, reviews of applications)",
+  "author": {
+    "name": "JRF"
+  },
   "homepage": "https://github.com/JRF-2018/mext",
   "repository": "https://github.com/JRF-2018/mext",
   "license": "MIT",
-  "keywords": ["matcha", "default-logic", "legal-reasoning", "neuro-symbolic", "lean"]
+  "keywords": [
+    "matcha",
+    "default-logic",
+    "legal-reasoning",
+    "neuro-symbolic",
+    "lean"
+  ]
 }

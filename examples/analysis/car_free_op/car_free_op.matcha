@@ -1,53 +1,50 @@
-// Source: car_free_op.md "Op-ed: Our city center should be car-free" (a fictional op-ed written as a test document for mext)
-// matcha analysis: transcription by AI (Claude Opus 5.5). Matcha-D (as on claims / !> / >> not / :: 優先) is an unofficial extension.
-// Paragraph numbers count the body paragraphs only (the title and the note in parentheses are not counted).
+// Source document: car_free_op.md
+// matcha analysis: transcribed by AI (Claude Opus 5.5). Matcha-D is an unofficial extension.
 
-:: Three reasons (paras 2-4)
-// Source: para 2 "First, safety. ... Removing the cars would remove most of the danger."
-#Safety argument <= downtown core: (
-    // Source: para 2 "Most serious pedestrian injuries in our city happen in the downtown core, and nearly all of them involve private cars."
-    %private cars are the main source of danger to pedestrians downtown <= (most serious pedestrian injuries in our city happen in the downtown core & nearly all of them involve private cars)@the involvement of private cars in nearly all of the injuries shows that the cars cause the danger
+:: First, safety
+// Source: para 2 "Most serious pedestrian injuries in our city happen in the downtown core, and nearly all of them involve private cars."
+// Supplied premise: the text moves from "involve private cars" to "removing the cars would remove most of the danger"; the step that the cars are the cause is left implicit.
+#safety <= the downtown core: (
+    %private cars are the source of most of the danger to pedestrians downtown <= (most serious pedestrian injuries in our city happen in the downtown core & nearly all serious pedestrian injuries downtown involve private cars)@injuries that involve private cars are caused by the private cars
+// Source: para 2 "Removing the cars would remove most of the danger."
 ) >> removing the cars would remove most of the danger as safety
 
-// Source: para 3 "Shop owners fear that customers who drive will stop coming." (an objection the op-ed answers)
-#Shop owners' objection <= local shops: (
-    %customers who drive will stop coming <= shop owners fear that customers who drive will stop coming@the shop owners' fear is well founded
-) >> a car-free center would hurt local shops as fear
+:: Second, business
+// Source: para 3 "Shop owners fear that customers who drive will stop coming."
+#shop owners' objection <= the car-free center: (
+    %customers who drive will stop coming <= shop owners fear that customers who drive will stop coming
+// Paraphrase: "would hurt local shops" is the objection implied by "rather than hurt them".
+) >> a car-free center would hurt local shops as shopfear
 
-// Source: para 3 "But surveys in other cities suggest ... A car-free center could therefore help local shops rather than hurt them."
-#Business argument <= local shops: (
-    // Source: para 3 "pedestrians visit shops more often and spend about as much per month as drivers do"
-    %local shops would not lose sales without customers who drive <= surveys in other cities suggest that pedestrians visit shops more often and spend about the same per month compared with drivers@the survey results from other cities hold in our city and lost driving customers would be made up by pedestrian customers
-) >> a car-free center could help local shops rather than hurt them as business
+// Source: para 3 "But surveys in other cities suggest that pedestrians visit shops more often and spend about as much per month as drivers do."
+#business^surveys in other cities <= the car-free center: (
+    %pedestrians are at least as valuable customers as drivers are <= surveys in other cities suggest that pedestrians visit shops more often and spend about as much per month as drivers do@the survey results from other cities hold for our city
+// Source: para 3 "A car-free center could therefore help local shops rather than hurt them."
+) >> a car-free center could help local shops rather than hurt them as business !> $shopfear
 
-// Source: para 3 "But" (the op-ed sets the business argument against the shop owners' fear)
-:: 優先 $business > $fear
-
-// Source: para 4 "Third, air quality. Traffic is the largest source of nitrogen dioxide downtown, and the levels on our main street regularly exceed the national guideline."
-#Air quality argument <= downtown core: (
-    // Source: para 4 "the levels on our main street regularly exceed the national guideline"
-    %air quality downtown needs to be improved <= the nitrogen dioxide levels on our main street regularly exceed the national guideline@exceeding the national guideline shows a problem that calls for action
-    // Source: para 4 "Traffic is the largest source of nitrogen dioxide downtown"
-    // Supplied premise: the paragraph speaks of traffic, not of private cars; the step from traffic to private cars is not in the text
-    %removing private cars would cut nitrogen dioxide downtown substantially <= traffic is the largest source of nitrogen dioxide downtown@private cars make up most of that traffic
-// Supplied premise: para 4 states no conclusion; the wording below is the AI's reading of what "Third, air quality" is offered for
+:: Third, air quality
+// Source: para 4 "Traffic is the largest source of nitrogen dioxide downtown, and the levels on our main street regularly exceed the national guideline."
+// Supplied premise: the paragraph states no conclusion and does not say that private cars make up the traffic; both are supplied so that the paragraph can serve as a reason.
+#air quality <= the downtown core: (
+    %a car-free center would cut the main source of nitrogen dioxide downtown <= traffic is the largest source of nitrogen dioxide downtown@private cars make up most of the downtown traffic
+    %the nitrogen dioxide downtown is a problem worth acting on <= the nitrogen dioxide levels on our main street regularly exceed the national guideline
 ) >> a car-free center would improve air quality downtown as air
 
-:: The objection about people with disabilities (para 5)
-// Source: para 5 "Some will object that people with disabilities depend on cars."
-#Disability objection <= downtown core: (
-    %people with disabilities depend on cars <= people with disabilities depend on cars
-) >> not the city council should adopt a car-free downtown plan as disability
-
-// Source: para 5 "This is a real concern, but it is an argument for exceptions, not against the plan - permits for disabled drivers, delivery vehicles and emergency services can be kept."
-#Answer by exceptions <= downtown core: (
-    %the concern can be met by exceptions to the plan <= permits for disabled drivers, delivery vehicles and emergency services can be kept@permits for disabled drivers would meet the needs of people with disabilities
-) >> the disability concern is an argument for exceptions, not against the plan as exceptions !> $disability
-
-:: Conclusion (paras 1 and 6)
-// Source: para 6 "For these reasons, the city council should adopt a car-free downtown plan." (para 1 states the same thesis "close its downtown core to private cars within five years")
-#Car-free downtown plan <= downtown core: (
+:: The plan
+// Source: para 6 "For these reasons, the city council should adopt a car-free downtown plan." (para 1 states the same thesis with "within five years")
+#car-free downtown <= the city: (
     $safety
     $business
     $air
 ) >> the city council should adopt a car-free downtown plan as plan
+
+:: The objection from disability
+// Source: para 5 "Some will object that people with disabilities depend on cars. This is a real concern"
+#disability objection <= the city: (
+    +%people with disabilities depend on cars <= some will object that people with disabilities depend on cars
+) >> not the city council should adopt a car-free downtown plan as disability !> $plan
+
+// Source: para 5 "but it is an argument for exceptions, not against the plan: permits for disabled drivers, delivery vehicles and emergency services can be kept."
+#exceptions <= the plan: (
+    %the concern can be met by exceptions within the plan <= permits for disabled drivers, delivery vehicles and emergency services can be kept@permits for disabled drivers meet the needs of people with disabilities
+) >> the concern of people with disabilities is an argument for exceptions, not against the plan as exceptions !> $disability

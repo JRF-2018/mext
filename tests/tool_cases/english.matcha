@@ -1,0 +1,19 @@
+// An English test case: output in English mode must contain no Japanese
+#Safety^Public safety <= downtown core: (
+    %Cars cause most injuries <= most serious injuries downtown involve private cars@cars are the main danger
+) >> removing the cars makes downtown safer as safety
+
+#Business^Survey <= downtown core: (
+    %Shops gain <= pedestrians visit shops more often@shops would gain customers
+) >> a car-free center helps shops as business
+
+#Plan <= downtown core: (
+    $safety
+    $business
+) >> the city should adopt the plan as plan
+
+#Objection^Access <= downtown core: (
+    %Some people depend on cars <= some people with disabilities depend on cars@the plan harms them
+) >> not the city should adopt the plan as objection
+
+:: priority $plan > $objection

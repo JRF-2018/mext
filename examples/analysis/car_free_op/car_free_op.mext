@@ -1,170 +1,168 @@
 @mext 1
 theory: car_free_op.matcha
-source: car_free_op.matcha sha256=f95176247aacbca9
-source: car_free_op.matcha.md sha256=fb4b651a10b5501f
-; MEXT: Matcha EXTension notation。書式は mext の docs/mext.md（スキルでは references/mext.md）を参照。
+source: car_free_op.matcha sha256=d9179023ab875933
+source: car_free_op.matcha.md sha256=16a55f225f0ed578
+; MEXT: Matcha EXTension notation. See docs/mext.md of mext (references/mext.md in the skill).
 
 [ai]
-; AI（または人）の判断。各行の ; 以降に理由を書く。
-;   same "代表の文言" "同じ意味の文言"
-;   neg  "文言A" "文言B"        … B は A の否定
-;   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む
-;   review "事実@評価" ok|doubtful|reject
-;   concern 名 "前提" "前提" …    … 内容の上で一つの争点を共有する前提（感度分析でまとめて外す）
-;   distinct "前提" "前提" …      … 内容の上で互いに独立な前提
-;   connective "主張のラベルか要件の文言" 明示|読み … 結び方（AND/OR）が原文に明示されているか
-;   fact-kind "事実" 記述|仮定|確認済み|著者の主張 … W の事実の種別
-; --- negation
-neg "a car-free center would hurt local shops〔local shops〕" "a car-free center could help local shops rather than hurt them〔local shops〕"   ; the business conclusion says "rather than hurt them" and is offered as the answer ("But") to the shop owners' fear (para 3)
-; --- connectives (transcription judgment, car_free_op.matcha.md §3)
-connective "plan" 読み   ; transcription judgment (car_free_op.matcha.md §3): "For these reasons" gathers the three reasons but does not say whether each one is needed
-connective "L9" 読み     ; transcription judgment (car_free_op.matcha.md §3): the two injury facts are joined by "and" in one sentence; the evaluation needs both
-connective "air" 読み    ; transcription judgment (car_free_op.matcha.md §3): para 4 lists two facts joined by "and" and states no inference
-; --- fact kinds (transcription judgment, car_free_op.matcha.md §3)
-fact-kind "downtown core" 記述   ; transcription judgment (car_free_op.matcha.md §3): the object of the claims
-fact-kind "local shops" 記述     ; transcription judgment (car_free_op.matcha.md §3): the object of the claims
-fact-kind "most serious pedestrian injuries in our city happen in the downtown core" 記述   ; transcription judgment (car_free_op.matcha.md §3): stated as fact (the op-ed's note says its figures are illustrative)
-fact-kind "nearly all of them involve private cars" 記述   ; transcription judgment (car_free_op.matcha.md §3): stated as fact
-fact-kind "shop owners fear that customers who drive will stop coming" 記述   ; transcription judgment (car_free_op.matcha.md §3): reported as fact
-fact-kind "surveys in other cities suggest that pedestrians visit shops more often and spend about the same per month compared with drivers" 記述   ; transcription judgment (car_free_op.matcha.md §3): reported as fact; the surveys are not named
-fact-kind "the nitrogen dioxide levels on our main street regularly exceed the national guideline" 記述   ; transcription judgment (car_free_op.matcha.md §3): stated as fact
-fact-kind "traffic is the largest source of nitrogen dioxide downtown" 記述   ; transcription judgment (car_free_op.matcha.md §3): stated as fact
-fact-kind "people with disabilities depend on cars" 記述   ; transcription judgment (car_free_op.matcha.md §3): the objection's premise, conceded by the author ("a real concern")
-fact-kind "permits for disabled drivers, delivery vehicles and emergency services can be kept" 著者の主張   ; transcription judgment (car_free_op.matcha.md §3): the author's proposal about the design of the plan, not a reported fact
-; --- review of the evaluations
-review "（most serious pedestrian injuries in our city happen in the downtown core & nearly all of them involve private cars）@the involvement of private cars in nearly all of the injuries shows that the cars cause the danger" ok   ; a pedestrian injured in a collision with a car is injured by the car; "involve" → "cause" is an ordinary reading. (Whether removing the cars removes the danger — displacement to other streets, to delivery vehicles or bicycles — is the claim's own step, see report §6)
-review "shop owners fear that customers who drive will stop coming@the shop owners' fear is well founded" ok   ; the objection's own inference; it is plausible that customers who can no longer drive downtown come less, and the op-ed does not dispute it
-review "surveys in other cities suggest that pedestrians visit shops more often and spend about the same per month compared with drivers@the survey results from other cities hold in our city and lost driving customers would be made up by pedestrian customers" doubtful   ; three leaps: (1) unnamed surveys in other cities are transferred to our city; (2) "suggest" is turned into a premise; (3) the surveys compare spending per customer, but the fear is about the number of customers — that drivers who stop coming are replaced by pedestrians is not shown
-review "the nitrogen dioxide levels on our main street regularly exceed the national guideline@exceeding the national guideline shows a problem that calls for action" ok   ; regularly exceeding a national guideline is an accepted reason for action
-review "traffic is the largest source of nitrogen dioxide downtown@private cars make up most of that traffic" doubtful   ; supplied premise (car_free_op.matcha.md §4): "traffic" includes buses, delivery vehicles and emergency services, and the op-ed itself keeps deliveries and emergency vehicles (para 5); diesel delivery and bus traffic can be a large share of NO2
-review "permits for disabled drivers, delivery vehicles and emergency services can be kept@permits for disabled drivers would meet the needs of people with disabilities" doubtful   ; permits for disabled *drivers* do not cover people with disabilities who are driven by others or rely on taxis; and "can be kept" is a proposal (fact-kind 著者の主張), not a shown result
+; judgments by the AI (or a person). Write the reason after ; on each line.
+;   same "representative" "same meaning"
+;   neg  "A" "B"                 … B is the negation of A
+;   failure "text" / effect "text" … read a conclusion as a consequence of failure / an effect
+;   review "fact@evaluation" ok|doubtful|reject
+;   concern name "premise" "premise" … premises sharing one point of contention
+;   distinct "premise" "premise" …   … premises independent of each other
+;   connective "claim label or requirement" explicit|reading … whether AND/OR is explicit in the source
+;   fact-kind "fact" description|assumption|verified|author-claim … kind of a fact in W
+;   supplied "premise" …             … premise supplied by the transcriber (not in the source)
+connective "plan" reading  ; transcription decision (car_free_op.matcha.md §3): "For these reasons" does not say whether each of the three reasons is needed
+connective "air" reading  ; transcription decision (car_free_op.matcha.md §3): the two requirements are the transcriber's; the source only joins the two facts with "and"
+connective "private cars are the source of most of the danger to pedestrians downtown" explicit  ; transcription decision (car_free_op.matcha.md §3): the two facts are joined by "and" in para 2
+fact-kind "most serious pedestrian injuries in our city happen in the downtown core" description  ; transcription decision (car_free_op.matcha.md §3)
+fact-kind "nearly all serious pedestrian injuries downtown involve private cars" description  ; transcription decision (car_free_op.matcha.md §3)
+fact-kind "shop owners fear that customers who drive will stop coming" description  ; transcription decision (car_free_op.matcha.md §3)
+fact-kind "surveys in other cities suggest that pedestrians visit shops more often and spend about as much per month as drivers do" description  ; transcription decision (car_free_op.matcha.md §3): the document itself says the figures are illustrative
+fact-kind "traffic is the largest source of nitrogen dioxide downtown" description  ; transcription decision (car_free_op.matcha.md §3)
+fact-kind "the nitrogen dioxide levels on our main street regularly exceed the national guideline" description  ; transcription decision (car_free_op.matcha.md §3)
+fact-kind "some will object that people with disabilities depend on cars" description  ; transcription decision (car_free_op.matcha.md §3): the author concedes it ("a real concern")
+fact-kind "permits for disabled drivers, delivery vehicles and emergency services can be kept" author-claim  ; transcription decision (car_free_op.matcha.md §3): a feasibility claim about the plan, not a reported fact
+supplied "（most serious pedestrian injuries in our city happen in the downtown core & nearly all serious pedestrian injuries downtown involve private cars）@injuries that involve private cars are caused by the private cars"  ; transcription decision (car_free_op.matcha.md §4): the step from "involve" to "removing the cars would remove most of the danger" is implicit in para 2
+supplied "traffic is the largest source of nitrogen dioxide downtown@private cars make up most of the downtown traffic"  ; transcription decision (car_free_op.matcha.md §4): para 4 says "traffic", not "private cars"
+supplied "#air quality [air]"  ; transcription decision (car_free_op.matcha.md §4): para 4 states no conclusion, so the conclusion of the claim air (a car-free center would improve air quality downtown) is supplied; marked on the claim
+review "（most serious pedestrian injuries in our city happen in the downtown core & nearly all serious pedestrian injuries downtown involve private cars）@injuries that involve private cars are caused by the private cars" ok  ; if private cars are gone, injuries involving them downtown largely cannot occur; the open questions (traffic displaced to streets outside the core, permit vehicles) qualify "most" but do not break the step
+review "surveys in other cities suggest that pedestrians visit shops more often and spend about as much per month as drivers do@the survey results from other cities hold for our city" doubtful  ; transfer from unnamed other cities is asserted, not shown; and the surveys compare pedestrians with drivers per customer, while the shop owners' fear is that the driving customers will be lost, which the surveys do not address; "suggest" is weak
+review "traffic is the largest source of nitrogen dioxide downtown@private cars make up most of the downtown traffic" doubtful  ; supplied; the plan itself keeps delivery vehicles and emergency services, and buses are not mentioned, so how much of the NO2 source the plan removes is open
+review "permits for disabled drivers, delivery vehicles and emergency services can be kept@permits for disabled drivers meet the needs of people with disabilities" doubtful  ; permits named are for disabled drivers; people with disabilities who are passengers or use taxis are not obviously covered
+review "air／%the nitrogen dioxide downtown is a problem worth acting on" ok  ; regularly exceeding a national guideline is an ordinary reason to act
+review "disability／%people with disabilities depend on cars" ok  ; the author concedes it ("This is a real concern")
+review "shopfear／%customers who drive will stop coming" doubtful  ; a fear is reported, not evidence that customers will stop coming; it matters only as the objection that business blocks
 
 [extra]
-;   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2
+;   fact "text" / rule "a" & "b" -> "c" / default name: "a" : "b" / "b" / priority name1 > name2
 
 [claimed]
-;   E1*: "文言", -"文言"   … 検証したい Extension（* は preferred であることも主張）
-E1*: "the city council should adopt a car-free downtown plan〔downtown core〕", "safety", "business", "air", -"a car-free center would hurt local shops〔local shops〕", !"disability"   ; prior prediction from car_free_op.matcha.md §6 (copied, not newly made)
+;   E1*: "text", -"text"   … an Extension to verify (* also claims it is preferred)
+E1*: "the city council should adopt a car-free downtown plan〔the city〕", "a car-free center could help local shops rather than hurt them〔the car-free center〕", !"a car-free center would hurt local shops〔the car-free center〕", !"#disability objection [disability]"  ; copied from car_free_op.matcha.md §6 (prediction before the first solve)
 
-; ===== ここから下は mext.py が自動生成（手で直さない） =====
+; ===== generated by mext below this line (do not edit) =====
 [atoms]
-k1     claim  "#Safety argument [safety]"  ; L7
-f1     fact   "downtown core"  ; L7,L27,L38,L43,L49
-r1     req    "safety／%private cars are the main source of danger to pedestrians downtown"  ; L9
-f2     fact   "most serious pedestrian injuries in our city happen in the downtown core"  ; L9
-f3     fact   "nearly all of them involve private cars"  ; L9
-x1     aux    "（L9 の AND・2項・1）"  ; L9
-v1     eval   "（most serious pedestrian injuries in our city happen in the downtown core & nearly all of them involve private cars）@the involvement of private cars in nearly all of the injuries shows that the cars cause the danger"  ; L9
-c1     concl  "removing the cars would remove most of the danger〔downtown core〕"  ; L10
-k2     claim  "#Shop owners' objection [fear]"  ; L13
-f4     fact   "local shops"  ; L13,L18
-r2     req    "fear／%customers who drive will stop coming"  ; L14
-f5     fact   "shop owners fear that customers who drive will stop coming"  ; L14
-v2     eval   "shop owners fear that customers who drive will stop coming@the shop owners' fear is well founded"  ; L14
-c2     concl  "a car-free center would hurt local shops〔local shops〕"  ; L15,L21
-k3     claim  "#Business argument [business]"  ; L18
-r3     req    "business／%local shops would not lose sales without customers who drive"  ; L20
-f6     fact   "surveys in other cities suggest that pedestrians visit shops more often and spend about the same per month compared with drivers"  ; L20
-v3     eval   "surveys in other cities suggest that pedestrians visit shops more often and spend about the same per month compared with drivers@the survey results from other cities hold in our city and lost driving customers would be made up by pedestrian customers"  ; L20
-k4     claim  "#Air quality argument [air]"  ; L27
-r4     req    "air／%air quality downtown needs to be improved"  ; L29
-f7     fact   "the nitrogen dioxide levels on our main street regularly exceed the national guideline"  ; L29
-v4     eval   "the nitrogen dioxide levels on our main street regularly exceed the national guideline@exceeding the national guideline shows a problem that calls for action"  ; L29
-r5     req    "air／%removing private cars would cut nitrogen dioxide downtown substantially"  ; L32
-f8     fact   "traffic is the largest source of nitrogen dioxide downtown"  ; L32
-v5     eval   "traffic is the largest source of nitrogen dioxide downtown@private cars make up most of that traffic"  ; L32
-x2     aux    "（L27 の AND・2項・1）"  ; L27
-c3     concl  "a car-free center would improve air quality downtown〔downtown core〕"  ; L34
-k5     claim  "#Disability objection [disability]"  ; L38
-r6     req    "disability／%people with disabilities depend on cars"  ; L39
-f9     fact   "people with disabilities depend on cars"  ; L39
-c4     concl  "the city council should adopt a car-free downtown plan〔downtown core〕"  ; L40,L53
-k6     claim  "#Answer by exceptions [exceptions]"  ; L43
-r7     req    "exceptions／%the concern can be met by exceptions to the plan"  ; L44
-f10    fact   "permits for disabled drivers, delivery vehicles and emergency services can be kept"  ; L44
-v6     eval   "permits for disabled drivers, delivery vehicles and emergency services can be kept@permits for disabled drivers would meet the needs of people with disabilities"  ; L44
-c5     concl  "the disability concern is an argument for exceptions, not against the plan〔downtown core〕"  ; L45
-k7     claim  "#Car-free downtown plan [plan]"  ; L49
-r8     req    "plan／$safety"  ; L50
-r9     req    "plan／$business"  ; L51
-r10    req    "plan／$air"  ; L52
-x3     aux    "（L49 の AND・3項・1）"  ; L49
-ab1    ab     "ab(disability)"
+k1     claim  "#safety [safety]"  ; L7
+f1     fact   "the downtown core"  ; L7,L28
+r1     req    "safety／%private cars are the source of most of the danger to pedestrians downtown"  ; L8
+f2     fact   "most serious pedestrian injuries in our city happen in the downtown core"  ; L8
+f3     fact   "nearly all serious pedestrian injuries downtown involve private cars"  ; L8
+x1     aux    "（L8 AND/2 #1）"  ; L8
+v1     eval   "（most serious pedestrian injuries in our city happen in the downtown core & nearly all serious pedestrian injuries downtown involve private cars）@injuries that involve private cars are caused by the private cars"  ; L8
+c1     concl  "removing the cars would remove most of the danger〔the downtown core〕"  ; L10
+k2     claim  "#shop owners' objection [shopfear]"  ; L14
+f4     fact   "the car-free center"  ; L14,L20
+r2     req    "shopfear／%customers who drive will stop coming"  ; L15
+f5     fact   "shop owners fear that customers who drive will stop coming"  ; L15
+c2     concl  "a car-free center would hurt local shops〔the car-free center〕"  ; L17
+k3     claim  "#business^surveys in other cities [business]"  ; L20
+r3     req    "business／%pedestrians are at least as valuable customers as drivers are"  ; L21
+f6     fact   "surveys in other cities suggest that pedestrians visit shops more often and spend about as much per month as drivers do"  ; L21
+v2     eval   "surveys in other cities suggest that pedestrians visit shops more often and spend about as much per month as drivers do@the survey results from other cities hold for our city"  ; L21
+c3     concl  "a car-free center could help local shops rather than hurt them〔the car-free center〕"  ; L23
+k4     claim  "#air quality [air]"  ; L28
+r4     req    "air／%a car-free center would cut the main source of nitrogen dioxide downtown"  ; L29
+f7     fact   "traffic is the largest source of nitrogen dioxide downtown"  ; L29
+v3     eval   "traffic is the largest source of nitrogen dioxide downtown@private cars make up most of the downtown traffic"  ; L29
+r5     req    "air／%the nitrogen dioxide downtown is a problem worth acting on"  ; L30
+f8     fact   "the nitrogen dioxide levels on our main street regularly exceed the national guideline"  ; L30
+x2     aux    "（L28 AND/2 #1）"  ; L28
+c4     concl  "a car-free center would improve air quality downtown〔the downtown core〕"  ; L31
+k5     claim  "#car-free downtown [plan]"  ; L35
+f9     fact   "the city"  ; L35,L43
+r6     req    "plan／$safety"  ; L36
+r7     req    "plan／$business"  ; L37
+r8     req    "plan／$air"  ; L38
+x3     aux    "（L35 AND/3 #1）"  ; L35
+c5     concl  "the city council should adopt a car-free downtown plan〔the city〕"  ; L39,L45
+k6     claim  "#disability objection [disability]"  ; L43
+r9     req    "disability／%people with disabilities depend on cars"  ; L44
+f10    fact   "some will object that people with disabilities depend on cars"  ; L44
+k7     claim  "#exceptions [exceptions]"  ; L48
+f11    fact   "the plan"  ; L48
+r10    req    "exceptions／%the concern can be met by exceptions within the plan"  ; L49
+f12    fact   "permits for disabled drivers, delivery vehicles and emergency services can be kept"  ; L49
+v4     eval   "permits for disabled drivers, delivery vehicles and emergency services can be kept@permits for disabled drivers meet the needs of people with disabilities"  ; L49
+c6     concl  "the concern of people with disabilities is an argument for exceptions, not against the plan〔the plan〕"  ; L50
+ab1    ab     "ab(shopfear)"
+ab2    ab     "ab(plan)"
+ab3    ab     "ab(disability)"
 
 [W]
-f1, f2, f3, f4, f5, f6, f7, f8, f9, f10
+f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12
 
 [rules]
 r1: f2 & f3 -> x1  ; AND
-r2: -f2 -> -x1  ; AND（必要条件の否定）
-r3: -f3 -> -x1  ; AND（必要条件の否定）
-r4: v1 -> r1  ; L9 %private cars are the main source of danger to pedestrians downtown
-r5: -v1 -> -r1  ; L9 %private cars are the main source of danger to pedestrians downtown（必要条件の否定）
-r6: -r1 -> -k1  ; L7 要件の否定による主張 safety の不成立
-r7: v2 -> r2  ; L14 %customers who drive will stop coming
-r8: -v2 -> -r2  ; L14 %customers who drive will stop coming（必要条件の否定）
-r9: -r2 -> -k2  ; L13 要件の否定による主張 fear の不成立
-r10: v3 -> r3  ; L20 %local shops would not lose sales without customers who drive
-r11: -v3 -> -r3  ; L20 %local shops would not lose sales without customers who drive（必要条件の否定）
-r12: -r3 -> -k3  ; L18 要件の否定による主張 business の不成立
-r13: v4 -> r4  ; L29 %air quality downtown needs to be improved
-r14: -v4 -> -r4  ; L29 %air quality downtown needs to be improved（必要条件の否定）
-r15: v5 -> r5  ; L32 %removing private cars would cut nitrogen dioxide downtown substantially
-r16: -v5 -> -r5  ; L32 %removing private cars would cut nitrogen dioxide downtown substantially（必要条件の否定）
+r2: -f2 -> -x1  ; AND (negation of a necessary condition)
+r3: -f3 -> -x1  ; AND (negation of a necessary condition)
+r4: v1 -> r1  ; L8 %private cars are the source of most of the danger to pedestrians downtown
+r5: -v1 -> -r1  ; L8 %private cars are the source of most of the danger to pedestrians downtown (negation of a necessary condition)
+r6: -r1 -> -k1  ; L7 claim safety fails by the negation of its requirement
+r7: f5 -> r2  ; L15 %customers who drive will stop coming (AI: doubtful)
+r8: -f5 -> -r2  ; L15 %customers who drive will stop coming (AI: doubtful) (negation of a necessary condition)
+r9: -r2 -> -k2  ; L14 claim shopfear fails by the negation of its requirement
+r10: v2 -> r3  ; L21 %pedestrians are at least as valuable customers as drivers are
+r11: -v2 -> -r3  ; L21 %pedestrians are at least as valuable customers as drivers are (negation of a necessary condition)
+r12: -r3 -> -k3  ; L20 claim business fails by the negation of its requirement
+r13: v3 -> r4  ; L29 %a car-free center would cut the main source of nitrogen dioxide downtown
+r14: -v3 -> -r4  ; L29 %a car-free center would cut the main source of nitrogen dioxide downtown (negation of a necessary condition)
+r15: f8 -> r5  ; L30 %the nitrogen dioxide downtown is a problem worth acting on
+r16: -f8 -> -r5  ; L30 %the nitrogen dioxide downtown is a problem worth acting on (negation of a necessary condition)
 r17: r4 & r5 -> x2  ; AND
-r18: -r4 -> -x2  ; AND（必要条件の否定）
-r19: -r5 -> -x2  ; AND（必要条件の否定）
-r20: -x2 -> -k4  ; L27 要件の否定による主張 air の不成立
-r21: f9 -> r6  ; L39 %people with disabilities depend on cars
-r22: -f9 -> -r6  ; L39 %people with disabilities depend on cars（必要条件の否定）
-r23: -r6 -> -k5  ; L38 要件の否定による主張 disability の不成立
-r24: v6 -> r7  ; L44 %the concern can be met by exceptions to the plan
-r25: -v6 -> -r7  ; L44 %the concern can be met by exceptions to the plan（必要条件の否定）
-r26: -r7 -> -k6  ; L43 要件の否定による主張 exceptions の不成立
-r27: r8 & r9 & r10 -> x3  ; AND
-r28: -r8 -> -x3  ; AND（必要条件の否定）
-r29: -r9 -> -x3  ; AND（必要条件の否定）
-r30: -r10 -> -x3  ; AND（必要条件の否定）
-r31: -x3 -> -k7  ; L49 要件の否定による主張 plan の不成立
-r32: k1 -> r8  ; L50 $safety の参照
-r33: -k1 -> -r8  ; L50 $safety の参照（必要条件の否定）
-r34: k3 -> r9  ; L51 $business の参照
-r35: -k3 -> -r9  ; L51 $business の参照（必要条件の否定）
-r36: k4 -> r10  ; L52 $air の参照
-r37: -k4 -> -r10  ; L52 $air の参照（必要条件の否定）
+r18: -r4 -> -x2  ; AND (negation of a necessary condition)
+r19: -r5 -> -x2  ; AND (negation of a necessary condition)
+r20: -x2 -> -k4  ; L28 claim air fails by the negation of its requirement
+r21: r6 & r7 & r8 -> x3  ; AND
+r22: -r6 -> -x3  ; AND (negation of a necessary condition)
+r23: -r7 -> -x3  ; AND (negation of a necessary condition)
+r24: -r8 -> -x3  ; AND (negation of a necessary condition)
+r25: -x3 -> -k5  ; L35 claim plan fails by the negation of its requirement
+r26: f10 -> r9  ; L44 %people with disabilities depend on cars
+r27: -f10 -> -r9  ; L44 %people with disabilities depend on cars (negation of a necessary condition)
+r28: -r9 -> -k6  ; L43 claim disability fails by the negation of its requirement
+r29: v4 -> r10  ; L49 %the concern can be met by exceptions within the plan
+r30: -v4 -> -r10  ; L49 %the concern can be met by exceptions within the plan (negation of a necessary condition)
+r31: -r10 -> -k7  ; L48 claim exceptions fails by the negation of its requirement
+r32: k1 -> r6  ; L36 reference to $safety
+r33: -k1 -> -r6  ; L36 reference to $safety (negation of a necessary condition)
+r34: k3 -> r7  ; L37 reference to $business
+r35: -k3 -> -r7  ; L37 reference to $business (negation of a necessary condition)
+r36: k4 -> r8  ; L38 reference to $air
+r37: -k4 -> -r8  ; L38 reference to $air (negation of a necessary condition)
 
 [defaults]
-e1: x1 : v1, r1 / v1  ; eval L9 評価 @the involvement of private cars in nearly all of the injuries shows that the cars cause the danger
-safety: f1, r1 : k1, c1 / k1, c1  ; claim L7 主張
-e2: f5 : v2, r2 / v2  ; eval L14 評価 @the shop owners' fear is well founded
-fear: f4, r2 : k2, c2 / k2, c2  ; claim L13 主張
-e3: f6 : v3, r3 / v3  ; eval L20 評価 @the survey results from other cities hold in our city and lost driving customers would be made up by pedestrian customers（AI: 疑わしい）
-business: f4, r3 : k3, -c2 / k3, -c2  ; claim L18 主張
-e4: f7 : v4, r4 / v4  ; eval L29 評価 @exceeding the national guideline shows a problem that calls for action
-e5: f8 : v5, r5 / v5  ; eval L32 評価 @private cars make up most of that traffic（AI: 疑わしい）
-air: f1, x2 : k4, c3 / k4, c3  ; claim L27 主張
-disability: f1, r6 : k5, -c4, -ab1 / k5, -c4  ; claim L38 主張
-e6: f10 : v6, r7 / v6  ; eval L44 評価 @permits for disabled drivers would meet the needs of people with disabilities（AI: 疑わしい）
-exceptions: f1, r7 : k6, c5 / k6, c5, ab1  ; claim L43 主張
-plan: f1, x3 : k7, c4 / k7, c4  ; claim L49 主張
+e1: x1 : v1, r1 / v1  ; eval L8 evaluation @injuries that involve private cars are caused by the private cars
+safety: f1, r1 : k1, c1 / k1, c1  ; claim L7 claim
+shopfear: f4, r2 : k2, c2, -ab1 / k2, c2  ; claim L14 claim
+e2: f6 : v2, r3 / v2  ; eval L21 evaluation @the survey results from other cities hold for our city (AI: doubtful)
+business: f4, r3 : k3, c3 / k3, c3, ab1  ; claim L20 claim ^surveys in other cities
+e3: f7 : v3, r4 / v3  ; eval L29 evaluation @private cars make up most of the downtown traffic (AI: doubtful)
+air: f1, x2 : k4, c4 / k4, c4  ; claim L28 claim
+plan: f9, x3 : k5, c5, -ab2 / k5, c5  ; claim L35 claim
+disability: f9, r9 : k6, -c5, -ab3 / k6, -c5, ab2  ; claim L43 claim
+e4: f12 : v4, r10 / v4  ; eval L49 evaluation @permits for disabled drivers meet the needs of people with disabilities (AI: doubtful)
+exceptions: f11, r10 : k7, c6 / k7, c6, ab3  ; claim L48 claim
 
 [priority]
-business > fear
+business > shopfear
+disability > plan
 exceptions > disability
 
 [extensions]
-; 衝突しうるデフォルト: fear, business, disability, plan
-E1:
-  generating: e1, safety, e2, fear, e3, e4, e5, air, e6, exceptions
-  literals: k1, f1, r1, f2, f3, x1, v1, c1, k2, f4, r2, f5, v2, c2, r3, f6, v3, k4, r4, f7, v4, r5, f8, v5, x2, c3, r6, f9, k6, r7, f10, v6, c5, r8, r10, ab1
-E2 preferred:
-  generating: e1, safety, e2, e3, business, e4, e5, air, e6, exceptions, plan
-  literals: k1, f1, r1, f2, f3, x1, v1, c1, f4, r2, f5, v2, -c2, k3, r3, f6, v3, k4, r4, f7, v4, r5, f8, v5, x2, c3, r6, f9, c4, k6, r7, f10, v6, c5, k7, r8, r9, r10, x3, ab1
+; possibly conflicting defaults: shopfear, plan, disability
+E1 preferred:
+  generating: e1, safety, e2, business, e3, air, plan, e4, exceptions
+  literals: k1, f1, r1, f2, f3, x1, v1, c1, f4, r2, f5, k3, r3, f6, v2, c3, k4, r4, f7, v3, r5, f8, x2, c4, k5, f9, r6, r7, r8, x3, c5, r9, f10, k7, f11, r10, f12, v4, c6, ab1, ab3
 
 [marks]
++ r9     L44 %people with disabilities depend on cars  ; E1:match
 
 [summary]
-extensions: 2 (preferred: 1)
-skeptical: k1, c1, -c2, k3, k4, c3, c4, k6, c5, k7
-credulous: k1, c1, -c2, k3, k4, c3, c4, k6, c5, k7
-; 検証の範囲: 評価 6 個（未審査 0・ok 3・doubtful 3・reject 0。doubtful と未審査の評価も推論を止めない）。W の事実 8 個（記述 7・著者の主張 1。種別は AI の判断。仮定と著者の主張は感度分析で外す候補にする）。最終的な結論 4 個のうち、成り立つもの 2 個、理論の中に対立する命題（否定）がないもの 1 個（これらは、反対の根拠に勝ったのではなく、反対の根拠が書かれていないだけである）。
+extensions: 1 (preferred: 1)
+skeptical: k1, c1, k3, c3, k4, c4, k5, c5, k7, c6
+credulous: k1, c1, k3, c3, k4, c4, k5, c5, k7, c6
+; scope of verification: 4 evaluations (unreviewed 0, ok 1, doubtful 3, reject 0; doubtful and unreviewed evaluations do not stop inference). 8 facts in W (description 7, author-claim 1; the kinds are AI judgments; assumptions and author claims are candidates in the sensitivity analysis). 3 premises supplied by the transcriber ([ai] supplied; not in the source). Of 4 final conclusions, 2 hold and 2 have no opposing proposition (negation) in the theory (these did not defeat any counter-argument; no counter-argument was written).

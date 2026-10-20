@@ -25,6 +25,11 @@ import re
 import json
 import argparse
 
+try:
+    from .i18n import t as _t, set_lang
+except ImportError:            # パッケージとしてではなく直接実行された場合
+    from i18n import t as _t, set_lang  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # 全角記号の正規化（1 文字 → 1 文字なので桁位置は変わらない）
 # 全角の括弧（）は法文中で普通に使われる（「建造物」（１０８条）など）ので変換しない。
@@ -47,7 +52,7 @@ STOP1 = set(OPS1)
 LABEL_CHARS = r'[^\s<>=~!&|@^:()「」$]+'
 AS_RE = re.compile(r'\s+as\s+(' + LABEL_CHARS + r')\s*(?=$|<=|>>|~>|=>|!>|&|\||@|\^|:|\))')
 AS_LINE_START_RE = re.compile(r'as\s+(' + LABEL_CHARS + r')\s*(?=$|<=|>>|~>|=>|!>|&|\||@|\^|:|\))')
-PRIORITY_RE = re.compile(r'^優先\s+\$(' + LABEL_CHARS + r')\s*>\s*\$(' + LABEL_CHARS + r')\s*$')
+PRIORITY_RE = re.compile(r'^(?:優先|priority)\s+\$(' + LABEL_CHARS + r')\s*>\s*\$(' + LABEL_CHARS + r')\s*$')   # :: priority は英語の別表記
 
 
 class Tok:
@@ -192,7 +197,7 @@ class Lexer:
                     emit('RPAREN', ')', i)
                     paren_depth -= 1
                 else:
-                    self.err(lineno, col0 + i + 1, '対応する ( のない ) があります')
+                    self.err(lineno, col0 + i + 1, _t('対応する ( のない ) があります', 'unmatched )'))
                 i += 1
                 expect_elem = False
                 continue
@@ -219,7 +224,7 @@ class Lexer:
                             break
                     j += 1
                 if j >= n:
-                    self.err(lineno, col0 + i + 1, '「 が閉じられていません')
+                    self.err(lineno, col0 + i + 1, _t('「 が閉じられていません', '「 is not closed'))
                     emit('QUOTE', s[i + 1:], i, extra='')
                     return paren_depth
                 inner = s[i + 1:j]
@@ -241,7 +246,7 @@ class Lexer:
             if ch == '$':
                 m = re.match(LABEL_CHARS, s[i + 1:])
                 if not m:
-                    self.err(lineno, col0 + i + 1, '$ の後にラベル名がありません')
+                    self.err(lineno, col0 + i + 1, _t('$ の後にラベル名がありません', 'no label name after $'))
                     i += 1
                     continue
                 emit('REF', m.group(0), i)
@@ -411,10 +416,10 @@ class Parser:
                     continue
                 if self.peek().type not in ('NL', 'EOF'):
                     bad = self.adv()
-                    self.err(bad, f'ここに {bad.value!r} は置けません')
+                    self.err(bad, _t('ここに {v} は置けません', '{v} is not allowed here', v=repr(bad.value)))
             else:
                 bad = self.adv()
-                self.err(bad, f'ここに {bad.value!r} は置けません')
+                self.err(bad, _t('ここに {v} は置けません', '{v} is not allowed here', v=repr(bad.value)))
         return doc
 
     # --- 要素の並び
@@ -441,7 +446,7 @@ class Parser:
                 if mode == 'block' and nxt.type == 'NL' and nxt.indent < block_indent:
                     break   # 行末の & が外側の並びに属する場合（カント例）
                 if pending is not None:
-                    self.err(t, f'区切り {pending} の後に続けて {t.value} があります')
+                    self.err(t, _t('区切り {a} の後に続けて {b} があります', 'separator {a} is directly followed by {b}', a=pending, b=t.value))
                 pending = t.value
                 self.adv()
                 continue
@@ -457,38 +462,40 @@ class Parser:
                 q = self.p - 1
                 while q > 0 and self.toks[q].line == t.line and self.toks[q].type != 'NL':
                     if self.toks[q].type == 'QUOTE' and self.toks[q - 1].type == 'OP' and self.toks[q - 1].value == '<=':
-                        hint = ('（<= の後の「…」が、事実ではなく要件「…」と読まれています。事実の文が発言などの引用で始まるなら、'
-                                '『』に替えてください）')
+                        hint = _t('（<= の後の「…」が、事実ではなく要件「…」と読まれています。事実の文が発言などの引用で始まるなら、'
+                                 '『』に替えてください）',
+                                 ' (the 「…」 after <= is read as a requirement, not a fact. If the fact begins with a quotation, '
+                                 'use 『』 instead)')
                         break
                     q -= 1
-                self.err(t, f'{t.value} を受け取れる要素が直前にありません{hint}')
+                self.err(t, _t('{v} を受け取れる要素が直前にありません{h}', 'no preceding element can take {v}{h}', v=t.value, h=hint))
                 self.adv()
                 continue
             else:
                 item = self.parse_item(ctx)
                 if item is None:
-                    self.err(t, f'要素を期待しましたが {t.value!r} がありました')
+                    self.err(t, _t('要素を期待しましたが {v} がありました', 'expected an element but found {v}', v=repr(t.value)))
                     self.adv()
                     continue
             if grp.items:
                 if pending is None:
                     if last_end_line is not None and last_end_line != -1:
-                        self.err(t, '要素の間に & / | / 改行 のいずれかが必要です')
+                        self.err(t, _t('要素の間に & / | / 改行 のいずれかが必要です', 'elements must be separated by &, | or a newline'))
                     grp.seps.append('NL')
                 else:
                     grp.seps.append(pending)
             elif pending is not None:
-                self.warn(t, f'並びの先頭に {pending} があります')
+                self.warn(t, _t('並びの先頭に {p} があります', '{p} at the start of a list', p=pending))
             pending = None
             grp.items.append(item)
             last_end_line = self.toks[self.p - 1].line if self.p > 0 else None
         if pending is not None and mode == 'paren':
-            self.warn(start, f'並びの末尾に {pending} があります')
+            self.warn(start, _t('並びの末尾に {p} があります', '{p} at the end of a list', p=pending))
         ops = set(grp.seps)
         if '&' in ops and '|' in ops:
-            self.err(start, '同じ並びに & と | が混在しています（括弧でまとめてください）')
+            self.err(start, _t('同じ並びに & と | が混在しています（括弧でまとめてください）', '& and | are mixed in one list (group them with parentheses)'))
         if '|' in ops and 'NL' in ops:
-            self.warn(start, '| と改行（AND の省略）が混在しています')
+            self.warn(start, _t('| と改行（AND の省略）が混在しています', '| and newlines (implicit AND) are mixed'))
         grp.op = 'OR' if '|' in ops else 'AND'
         return grp
 
@@ -525,7 +532,7 @@ class Parser:
             node = Node('req', t, line_indent, is_root)
             node.head = self.take_text()
             if not node.head:
-                self.err(t, '% の後に要件・定義の文言がありません')
+                self.err(t, _t('% の後に要件・定義の文言がありません', 'no requirement or definition text after %'))
             self.take_basis(node)
         elif t.type == 'QUOTE':
             self.adv()
@@ -547,22 +554,22 @@ class Parser:
             node = self.parse_list(ctx, 'paren')
             node.line, node.col, node.line_indent, node.is_root = t.line, t.col, line_indent, is_root
             if not node.items:
-                self.warn(t, '中身のない ( ) です')
+                self.warn(t, _t('中身のない ( ) です', 'empty ( )'))
             if self.peek().type == 'RPAREN':
                 self.adv()
             else:
-                self.err(t, '( が閉じられていません')
+                self.err(t, _t('( が閉じられていません', '( is not closed'))
         elif t.type == 'TEXT':
             self.adv()
             node = Node('fact' if ctx == 'fact' else 'plain', t, line_indent, is_root)
             node.head = t.value
         else:
             if mark:
-                self.err(t, f'{mark} の後に要素がありません')
+                self.err(t, _t('{m} の後に要素がありません', 'no element after {m}', m=mark))
             return None
         node.mark = mark
         if mark and node.kind in ('fact', 'group'):
-            self.warn(t, f'事実・括弧に成否の印 {mark} が付いています')
+            self.warn(t, _t('事実・括弧に成否の印 {m} が付いています', 'a success/failure mark {m} is attached to a fact or parenthesis', m=mark))
         self.parse_postfix(node)
         return node
 
@@ -584,7 +591,7 @@ class Parser:
                     node.basis = m.group(1)
                     node.suffix = (node.suffix or '') + m.group(2)
             else:
-                self.err(t, '^ の後に根拠がありません')
+                self.err(t, _t('^ の後に根拠がありません', 'no basis after ^'))
 
     def accepts(self, node, op, nxt=None):
         if op not in ACCEPT.get(node.kind, set()):
@@ -659,7 +666,7 @@ class Parser:
                 if self.peek().type == 'TEXT':
                     node.eval = self.adv().value
                 else:
-                    self.err(t, '@ の後に評価がありません')
+                    self.err(t, _t('@ の後に評価がありません', 'no evaluation after @'))
             elif op == '>>':
                 neg = False
                 if self.peek().type == 'NOT':
@@ -669,7 +676,7 @@ class Parser:
                     txt = self.adv().value
                 else:
                     txt = ''
-                    self.err(t, '>> の後に結論がありません')
+                    self.err(t, _t('>> の後に結論がありません', 'no conclusion after >>'))
                 node.conclusion = {'text': txt, 'negated': neg, 'line': t.line}
             elif op == 'AS':
                 node.label = t.value
@@ -680,7 +687,7 @@ class Parser:
                         self.adv()
                         node.excepts.append(self.adv().value)
                 else:
-                    self.err(t, '!> の後には $ラベル が必要です')
+                    self.err(t, _t('!> の後には $ラベル が必要です', '!> must be followed by $label'))
 
     def accepts_cont(self, node, op, indent):
         if not self.accepts(node, op):
@@ -699,20 +706,20 @@ class Parser:
                 return self.unwrap(lst)
             nt = self.peek(1)
             if nt.type in ('EOF', 'RPAREN') or self.optype(nt) in CONT_OPS:
-                self.err(optok, f'{optok.value} の後に何もありません')
+                self.err(optok, _t('{v} の後に何もありません', 'nothing after {v}', v=optok.value))
                 return None
             # 同じインデントの次行を 1 要素として受け取る（カント例の「? 天才とは =>」など）
-            self.warn(optok, f'{optok.value} の後の内容が次の行に同じ深さで書かれています（字下げを推奨）')
+            self.warn(optok, _t('{v} の後の内容が次の行に同じ深さで書かれています（字下げを推奨）', 'the operand of {v} is on the next line at the same depth (indent it)', v=optok.value))
             self.adv()
             return self.parse_item(ctx)
         if t.type in ('EOF', 'RPAREN') or (self.optype(t) in CONT_OPS and t.type == 'OP' and t.value != '('):
-            self.err(optok, f'{optok.value} の後に何もありません')
+            self.err(optok, _t('{v} の後に何もありません', 'nothing after {v}', v=optok.value))
             return None
         if ctx == 'fact':
             return self.parse_fact_expr()
         item = self.parse_item(ctx)
         if item is None:
-            self.err(t, f'{optok.value} の後に要素を期待しましたが {t.value!r} がありました')
+            self.err(t, _t('{a} の後に要素を期待しましたが {b} がありました', 'expected an element after {a} but found {b}', a=optok.value, b=repr(t.value)))
         return item
 
     def parse_fact_expr(self):
@@ -731,7 +738,7 @@ class Parser:
             self.adv()
             it = self.parse_item('fact')
             if it is None:
-                self.err(t, f'{t.value} の後に事実がありません')
+                self.err(t, _t('{v} の後に事実がありません', 'no fact after {v}', v=t.value))
                 break
             seps.append(t.value)
             items.append(it)
@@ -741,7 +748,7 @@ class Parser:
         g.line, g.col = first.line, first.col
         g.items, g.seps = items, seps
         if '&' in seps and '|' in seps:
-            self.err(t, '同じ並びに & と | が混在しています')
+            self.err(t, _t('同じ並びに & と | が混在しています', '& and | are mixed in one list'))
         g.op = 'OR' if '|' in seps else 'AND'
         return g
 
@@ -771,35 +778,39 @@ def check_semantics(doc, diags):
     for n in doc.walk():
         if n.label:
             if n.label in labels:
-                diags.append(Dn('error', n, f'ラベル {n.label} が重複しています（L{labels[n.label].line}）'))
+                diags.append(Dn('error', n, _t('ラベル {a} が重複しています（L{b}）', 'duplicate label {a} (L{b})', a=n.label, b=labels[n.label].line)))
             else:
                 labels[n.label] = n
     for n in doc.walk():
         if n.kind == 'ref' and n.head not in labels:
-            diags.append(Dn('error', n, f'$${n.head} は定義されていません'.replace('$$', '$')))
+            diags.append(Dn('error', n, _t('${h} は定義されていません', '${h} is not defined', h=n.head)))
         for e in n.excepts:
             if e not in labels:
-                diags.append(Dn('error', n, f'!> の対象 ${e} は定義されていません'))
+                diags.append(Dn('error', n, _t('!> の対象 ${e} は定義されていません', 'the target ${e} of !> is not defined', e=e)))
             elif labels[e] is n:
-                diags.append(Dn('error', n, f'自分自身 ${e} を例外の対象にしています'))
+                diags.append(Dn('error', n, _t('自分自身 ${e} を例外の対象にしています', '${e} is declared an exception to itself', e=e)))
         if n.kind == 'priority':
             for e in n.head:
                 if e not in labels:
-                    diags.append(Dn('error', n, f'優先の対象 ${e} は定義されていません'))
+                    diags.append(Dn('error', n, _t('優先の対象 ${e} は定義されていません', 'the target ${e} of 優先 is not defined', e=e)))
         if n.kind == 'issue' and n.norm is None and n.conclusion is None and n.application is None and n.reason is None:
-            diags.append(Dn('warning', n, '論点（?）に規範（=>）も結論（>>）もありません'))
+            diags.append(Dn('warning', n, _t('論点（?）に規範（=>）も結論（>>）もありません', 'an issue (?) has neither a norm (=>) nor a conclusion (>>)')))
         if n.facts is not None:
             for x in (n.facts.items if n.facts.kind == 'group' else [n.facts]):
                 if x.kind == 'req' and x.quote:
-                    diags.append(Dn('warning', x, f'<= の後の「{x.head}」{x.suffix or ""} が、事実ではなく要件と読まれました。'
-                                                  '事実の文が発言などの引用で始まるなら『』に替え、要件なら : でつないでください'))
+                    diags.append(Dn('warning', x, _t('<= の後の「{h}」{s} が、事実ではなく要件と読まれました。'
+                                                    '事実の文が発言などの引用で始まるなら『』に替え、要件なら : でつないでください',
+                                                    '「{h}」{s} after <= is read as a requirement, not a fact. If the fact begins with a '
+                                                    'quotation, use 『』; if it is a requirement, attach it with :', h=x.head, s=x.suffix or '')))
         if n.kind == 'fact' and n.label and re.fullmatch(r'[a-z]+', n.label):
             # 英文の行末の「… as drivers」は、ラベル付けとして読まれ、事実の文が切れる
-            diags.append(Dn('warning', n, f'事実「{n.head}」の後の「as {n.label}」がラベル付けとして読まれました。'
-                                          '英文の中の as なら、文を言い換えて行末に「as 単語」が来ないようにしてください'))
+            diags.append(Dn('warning', n, _t('事実「{h}」の後の「as {l}」がラベル付けとして読まれました。'
+                                            '英文の中の as なら、文を言い換えて行末に「as 単語」が来ないようにしてください',
+                                            '“as {l}” after the fact “{h}” is read as a label. If “as” belongs to the sentence, '
+                                            'rephrase so that the line does not end with “as <word>”', h=n.head, l=n.label)))
         if n.kind in ('fact', 'plain', 'claim', 'req', 'issue') and n.head:
             if re.search(r'\b(AND|OR|NOT)\b', n.head):
-                diags.append(Dn('warning', n, 'AND/OR/NOT が文言中にあります。Matcha の論理演算子は & と | です'))
+                diags.append(Dn('warning', n, _t('AND/OR/NOT が文言中にあります。Matcha の論理演算子は & と | です', 'AND/OR/NOT appears in the text. The logical operators of Matcha are & and |')))
         # 成否の印の伝播
         m = effective_mark(n)
         if m and n.kind in ('claim', 'req', 'plain', 'ref'):
@@ -813,21 +824,21 @@ def check_semantics(doc, diags):
                     continue
                 if op == 'AND':
                     if m == '+' and '!' in km:
-                        diags.append(Dn('warning', n, '成立（+）とされていますが、AND の下位要件に不成立（!）があります'))
+                        diags.append(Dn('warning', n, _t('成立（+）とされていますが、AND の下位要件に不成立（!）があります', 'marked as holding (+), but an AND sub-requirement is marked as failing (!)')))
                     if m == '!' and '!' not in km and len(km) == len(kids):
-                        diags.append(Dn('warning', n, '不成立（!）とされていますが、AND の下位要件はすべて成立（+）です'))
+                        diags.append(Dn('warning', n, _t('不成立（!）とされていますが、AND の下位要件はすべて成立（+）です', 'marked as failing (!), but all AND sub-requirements are marked as holding (+)')))
                 else:
                     if m == '+' and all(x == '!' for x in km) and len(km) == len(kids):
-                        diags.append(Dn('warning', n, '成立（+）とされていますが、OR の選択肢がすべて不成立（!）です'))
+                        diags.append(Dn('warning', n, _t('成立（+）とされていますが、OR の選択肢がすべて不成立（!）です', 'marked as holding (+), but all OR alternatives are marked as failing (!)')))
                     if m == '!' and '+' in km:
-                        diags.append(Dn('warning', n, '不成立（!）とされていますが、OR の選択肢に成立（+）があります'))
+                        diags.append(Dn('warning', n, _t('不成立（!）とされていますが、OR の選択肢に成立（+）があります', 'marked as failing (!), but an OR alternative is marked as holding (+)')))
     excepts = [(n.label, e) for n in doc.walk() for e in n.excepts if n.label]
     # 相互例外の検出（PROLEG の相互例外のように複数の Extension を生む）
     pairs = set(excepts)
     for a, b in pairs:
         if (b, a) in pairs and a < b:
             n = labels[a]
-            diags.append(Dn('info', n, f'${a} と ${b} は互いに例外です（複数の Extension がありえます）'))
+            diags.append(Dn('info', n, _t('${a} と ${b} は互いに例外です（複数の Extension がありえます）', '${a} and ${b} are exceptions to each other (several Extensions are possible)', a=a, b=b)))
     return labels
 
 
@@ -845,13 +856,13 @@ def fmt_head(n):
     elif n.kind == 'ref':
         s = f'{m}${n.head}'
     elif n.kind == 'fact':
-        s = f'[事実] {n.head}'
+        s = _t('[事実] {h}', '[fact] {h}', h=n.head)
     elif n.kind == 'plain':
         s = f'{m}{n.head}'
     elif n.kind == 'section':
         s = f':: {n.head}'
     elif n.kind == 'priority':
-        s = f':: 優先 ${n.head[0]} > ${n.head[1]}'
+        s = _t(':: 優先 ${a} > ${b}', ':: priority ${a} > ${b}', a=n.head[0], b=n.head[1])
     elif n.kind == 'group':
         s = f'{m}({n.op})'
     else:
@@ -927,14 +938,17 @@ def check_files(named_texts):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description='Matcha / Matcha-D 構文チェッカ')
+    ap = argparse.ArgumentParser(description='Matcha / Matcha-D 構文チェッカ (syntax checker)')
     ap.add_argument('files', nargs='+')
+    ap.add_argument('--lang', choices=['ja', 'en'], help='出力の言語（既定は環境変数 MEXT_LANG、なければ ja） / output language')
     ap.add_argument('--tree', action='store_true', help='構文木を表示')
     ap.add_argument('--json', action='store_true', help='構文木を JSON で出力')
     ap.add_argument('--quiet', action='store_true', help='エラーと警告の件数だけを表示')
     ap.add_argument('--shared-labels', action='store_true',
                     help='複数のファイルを一つの理論として、ラベルの名前空間を共有して検査する')
     args = ap.parse_args(argv)
+    if args.lang:
+        set_lang(args.lang)
     status = 0
     results = []
     if args.shared_labels:
@@ -946,7 +960,7 @@ def main(argv=None):
             print(json.dumps({'files': args.files, 'ok': nerr == 0, 'diagnostics': [d.to_json() for d in diags],
                               'labels': sorted(labels), 'ast': [d.to_json() for d in docs]}, ensure_ascii=False, indent=1))
             return 1 if nerr else 0
-        print(f'== {len(args.files)} ファイル（ラベル共有）: エラー {nerr} 件, 警告 {nwarn} 件')
+        print(_t('== {n} ファイル（ラベル共有）: エラー {e} 件, 警告 {w} 件', '== {n} files (shared labels): {e} errors, {w} warnings', n=len(args.files), e=nerr, w=nwarn))
         if not args.quiet:
             for d in diags:
                 print('  ' + str(d))
@@ -967,7 +981,7 @@ def main(argv=None):
             results.append({'file': path, 'ok': nerr == 0, 'diagnostics': [d.to_json() for d in diags],
                             'labels': sorted(labels), 'ast': doc.to_json()})
             continue
-        print(f'== {path}: エラー {nerr} 件, 警告 {nwarn} 件')
+        print(_t('== {p}: エラー {e} 件, 警告 {w} 件', '== {p}: {e} errors, {w} warnings', p=path, e=nerr, w=nwarn))
         if not args.quiet:
             for d in diags:
                 print('  ' + str(d))

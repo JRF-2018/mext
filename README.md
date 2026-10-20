@@ -2,7 +2,7 @@
 
 Matcha の法的推論コードをデフォルト論理として読む道具一式。内容は、構文チェッカ、Reiter／優先度付き Extension の計算・検証（Lean 証明つき）、Claude Code スキル（任意の文書の論証を分析する「mext分析」「matcha分析」を含む）。
 
-*Read Matcha legal-reasoning code as default logic: a syntax checker, a Reiter/prioritized extension solver with Lean certificates, and Claude Code skills for neuro-symbolic argument review of any document.*
+*Read Matcha legal-reasoning code as default logic: a syntax checker, a Reiter/prioritized extension solver with Lean certificates, and Claude Code skills for neuro-symbolic argument review of any document.* **English: [README.en.md](README.en.md)**
 
 > **注意**
 > - [Matcha](https://www.elecode.jp/matcha) は花房孟胤氏による法的推論の形式言語である。本リポジトリはその文法を、公開されている用例から読み取って実装したものである。
@@ -70,7 +70,7 @@ claude plugin install mext@jrf-mext
 
 ### 英語での利用
 
-英語の文書を英語で頼めば、書き起こし・メモ・レポート・会話への返答は英語になる（例: [examples/analysis/car_free_op/](examples/analysis/car_free_op/)）。ただし mext の出力（構文チェッカの診断、report、summary、sensitivity など）は日本語なので、レポートには日本語のまま貼られる。
+英語の文書を英語で頼めば、書き起こし・メモ・レポート・会話への返答は英語になる（例: [examples/analysis/car_free_op/](examples/analysis/car_free_op/)）。mext の出力（構文チェッカの診断、report、summary、sensitivity など）も、`--lang en` を付けるか環境変数 `MEXT_LANG=en` にすれば英語になる（0.4.0 以降。既定は日本語）。ロケール（`LANG` など）は見ない。AI のサンドボックスや Colab などでは、ロケールが利用者の言語を表さないことが多いためである。`[ai]` の語彙（`explicit`/`reading`、`description`/`assumption`/`verified`/`author-claim`）と優先順位の記法（`:: priority $a > $b`）も英語で書ける。英語の説明は [README.en.md](README.en.md)。
 
 ### AI に頼むとき
 
@@ -93,6 +93,9 @@ mext lean examples/tweety.mext                    # Lean 証明（lean で検査
 mext summary examples/sublease.mext               # 一画面の要約: 最終的な結論・対立する命題・決め手・争点・検証の範囲
 mext sensitivity examples/sublease.mext           # 感度分析: 結論ごとに、どの前提を外すと成り立たなくなるか
 mext lint examples/sublease.mext                  # 書き起こしの粗さの検査
+mext connectives examples/sublease.mext           # 結び方の感度: AND / OR を入れ替えると何が変わるか
+mext audit X.mext                                 # 分析の手順の抜けの点検（✓ / ✗ / －）
+mext changed X.check.mext                         # 書き起こしの後に .matcha やメモが変わったか
 mext snapshot X.mext && （X.matcha を直す） && mext solve X.mext && mext diff X.v1.mext X.mext
                                                   # 書き起こしを直す前後の、帰結・依存・審査の差
 ```
@@ -101,6 +104,7 @@ mext snapshot X.mext && （X.matcha を直す） && mext solve X.mext && mext di
 - **検証の範囲**: `solve`・`report`・`summary` は、評価の審査の内訳と、理論の中に対立する命題（否定）を持たない最終的な結論の数を表示する。「Extension が一つで、すべての結論が成り立つ」という見栄えは、反対の根拠が書かれていないだけのことがあるからである。
 - **connectives**: AND / OR を一つずつ入れ替えて、帰結と依存の変化を示す。日本語の文章では結び方が明示されないことが多いので、根拠を書かせる代わりに、「明示か読みか」を `[ai]` に記録させ、結論を左右する読みの結び方を指す。
 - **concern / distinct**: 同じ結論を支える経路が複数あっても、それが独立した根拠か、同じ弱点の言い換えかは計算では分からない。この判断を AI が `[ai]` に書くと、感度分析と summary がそれを使って「経路は三本でも弱点は一つ」などと示す。
+- **audit** は、分析の手順の抜け（書き起こしの記録、未審査の評価、未記録の結び方、予測の検証、出力のファイルなど）を一覧にする。スキルは最後にこれを回し、✗ をなくすか、なくせない理由をレポートに書く。手順を守ったかの点検を、スキルの指示の文章ではなく道具に任せるためのものである。
 - **summary** は、最終的な結論ごとの成否・対立する命題の有無・決め手になる前提と、争点（結論が依存している doubtful の評価）を一画面にまとめる。全表と全導出への入口である。
 - **lint** は、同語反復の評価（`%A <= 事実@A`）、結論の文言の書き写し、立証の手段のない要件など、書き起こしの粗さを知らせる。
 - **diff** は、原子を番号ではなく文言で対応づけて比べる。書き起こしを直すと原子の番号や行番号がずれるので、普通の diff では、論証の何が変わったか（どの結論が否定に転じたか、何に依存するようになったか、どの審査が外れたか）が読めないためである。
@@ -147,7 +151,7 @@ Claude Code では次のように使う。プラグインとして入れた場�
 ```bash
 python3 tests/run_tests.py       # 構文チェッカの回帰テスト
 python3 tests/run_mext_tests.py  # Extension の回帰テスト
-python3 tests/run_tool_tests.py  # sensitivity / lint / diff / snapshot の回帰テスト
+python3 tests/run_tool_tests.py  # 分析コマンド（sensitivity / lint / diff / audit など）と英語の出力の回帰テスト
 ```
 
 `tests/docs/` には、スキル mext-analysis / matcha-analysis を試すための文書（自作の架空の事案・論説・小論）がある。その実行結果は `examples/analysis/` にある。

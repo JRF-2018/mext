@@ -122,6 +122,27 @@ try:
 finally:
     shutil.rmtree(d)
 
+# review / supplied を評価の部分だけ（"@評価"）や要件の素の文言で指す（写しで試す）
+d = tempfile.mkdtemp()
+try:
+    shutil.copy(os.path.join(TC, 'shared_eval.matcha'), d)
+    txt = open(os.path.join(TC, 'shared_eval.mext'), encoding='utf-8').read().replace(
+        '[ai]\n', '[ai]\nreview "@便益は義務の理由になる" doubtful  ; 試験\nsupplied "@便益は義務の理由になる"  ; 試験\nreview "Aの要件" ok  ; 試験\n', 1)
+    f = os.path.join(d, 'shared_eval.mext')
+    open(f, 'w', encoding='utf-8').write(txt)
+    mf, th, _ = analysis.load(f)
+    check('review: 評価の部分だけ（"@評価"）で指せる', set(th.eval_status.values()) == {'doubtful'}, str(th.eval_status))
+    check('review / supplied: 素の文言で指しても「見当たらない」と言われない', not mf.errs, str(mf.errs))
+    cands = analysis.candidates(th)
+    check('supplied: 評価の部分だけで指せる', any(c.supplied for c in cands if c.kind.startswith('eval')))
+finally:
+    shutil.rmtree(d)
+
+# 要件の素の文言の別名が、$参照とラベルの解決を曖昧にしない（英語の例の [claimed] は "safety" などのラベルで書かれている）
+cf = os.path.join(EX, 'analysis', 'car_free_op', 'car_free_op.mext')
+mf, th, _ = analysis.load(cf)
+check('別名: ラベルで書いた [claimed] が解決できる', all(ok for _, ok, _ in analysis.verify_claims(th, mf)), str(analysis.verify_claims(th, mf)))
+
 # --- 検証の範囲
 th = theory(os.path.join(TC, 'three_paths.mext'))
 exts, pref, _ = core.solve(th)
@@ -163,6 +184,33 @@ try:
     check('fact-kind: 検証の範囲に事実の種別を出す', '仮定 1' in core.scope_text(th, core.scope(th, exts, pref)))
 finally:
     shutil.rmtree(d)
+
+# --- English output（MEXT_LANG=en / --lang en）: 道具の出力に日本語が残らない
+import re
+from mext import i18n, matcha_check
+JP = re.compile(r'[\u3040-\u30ff\u4e00-\u9fff]')
+i18n.set_lang('en')
+try:
+    ef = os.path.join(TC, 'english.mext')
+    mf, th, diags = analysis.load(ef)
+    exts, pref, conflicting = core.solve(th)
+    res = analysis.sensitivity(th)
+    texts = {
+        'summary': analysis.summary_md(th, mf, ef),
+        'sensitivity': analysis.sensitivity_md(th, res, ef),
+        'report': core.report_md(th, exts, pref, conflicting),
+        'generated': core.render_generated(th, exts, pref, conflicting, diags),
+        'connectives': analysis.connectives_md(th, analysis.connective_sensitivity(th, mf), ef),
+        'diff': analysis.diff_md(ef, ef, th, th, mf, mf, ('concl', 'claim')),
+        'lint': ' '.join(m for _, _, _, m in analysis.lint(th, mf, exts, pref)),
+        'audit': ' '.join(f'{i} {m}' for _, i, m in analysis.audit(ef)),
+        'checker': ' '.join(d.msg for d in matcha_check.check_text(open(os.path.join(HERE, 'corpus_neg', 'english_as.matcha'), encoding='utf-8').read())[1]),
+    }
+    for k, v in texts.items():
+        bad = [m.group(0) for m in JP.finditer(v)]
+        check(f'English output: {k} に日本語が残らない', not bad, ''.join(bad)[:40])
+finally:
+    i18n.set_lang('ja')
 
 # --- lint
 mf, th, _ = analysis.load(os.path.join(TC, 'coarse.mext'))

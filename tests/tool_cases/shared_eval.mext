@@ -34,7 +34,7 @@ c2     concl  "理由Bがある〔本件〕"  ; L7
 k3     claim  "#結論 [結論]"  ; L8
 r3     req    "結論／$A"  ; L9
 r4     req    "結論／$B"  ; L9
-x1     aux    "（L9 の OR・2項・1）"  ; L9
+x1     aux    "（L9 OR/2 #1）"  ; L9
 c3     concl  "義務がある〔本件〕"  ; L10
 
 [W]

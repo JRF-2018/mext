@@ -1,13 +1,13 @@
-# 結び方の感度: car_free_op.mext
+# Sensitivity to connectives: car_free_op.mext
 
-（mext connectives の出力。二つ以上を並べた箇所の AND / OR を一つずつ入れ替えて計算し直し、懐疑的帰結（結論・主張）が変わる箇所を示す。結び方が原文に明示されているかの記録は、[ai] の connective による AI の判断）
+(output of mext connectives: each AND / OR joining two or more items is flipped in turn and the theory recomputed, showing where skeptical consequences (conclusions, claims) change. Whether a connective is explicit in the source is an AI judgment recorded by [ai] connective)
 
-並べた箇所 3 か所のうち、入れ替えると帰結か、最終的な結論の依存（単独で外すと結論が消える前提）が変わるもの 3 か所（原文に明示 0・読み 3・未記録 0）。明示のない結び方が結論を左右しているなら、結論から逆算した結び方でないかを、原文に照らして確かめる。
+Of 3 places, flipping 3 changes a consequence or the dependencies of a final conclusion (premises whose removal alone defeats it) (explicit in the source 1, reading 2, unrecorded 0). If a connective that is not explicit decides a conclusion, check against the source that it was not chosen backwards from the conclusion.
 
-| 位置 | 属するもの | 今の結び方 | 入れ替えると成り立たなくなる | 入れ替えると新たに成り立つ | 入れ替えると依存が変わる最終的な結論（単独で効く前提の数: 今 → 入れ替え後） | AI の記録 |
+| place | belongs to | connective | flipping defeats | flipping makes hold | final conclusions whose dependencies change (number of single decisive premises: now → flipped) | AI record |
 |---|---|---|---|---|---|---|
-| L9 | 要件「private cars are the main source of danger to pedestrians downtown」 | AND（2 項） | — | — | 「the city council should adopt a car-free downtown plan〔downtown core〕」 11 → 11 | 読み |
-| L27 | 主張「air」 | AND（2 項） | — | — | 「the city council should adopt a car-free downtown plan〔downtown core〕」 11 → 9 | 読み |
-| L49 | 主張「plan」 | AND（3 項） | — | — | 「the city council should adopt a car-free downtown plan〔downtown core〕」 11 → 4 | 読み |
+| L8 | requirement “private cars are the source of most of the danger to pedestrians downtown” | AND (2 items) | — | — | “the city council should adopt a car-free downtown plan〔the city〕” 10 → 10 | explicit |
+| L28 | claim “air” | AND (2 items) | — | — | “the city council should adopt a car-free downtown plan〔the city〕” 10 → 9 | reading |
+| L35 | claim “plan” | AND (3 items) | — | — | “the city council should adopt a car-free downtown plan〔the city〕” 10 → 4 | reading |
 
-依存の数が減る入れ替え（AND → OR）は結論を壊れにくくし、増える入れ替え（OR → AND）は壊れやすくする。今の結び方が、結論を最も壊れにくくする向きに選ばれていて、しかも原文に明示がないなら、とくに確かめる。
+A flip that reduces dependencies (AND → OR) makes a conclusion more robust; one that increases them (OR → AND) makes it more fragile. Check especially when the current connective is the one that makes the conclusion most robust and is not explicit in the source.

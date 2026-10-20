@@ -1,42 +1,43 @@
-The mext分析 is done. The short version: **the first half of the essay's conclusion can be derived, but the second half can't, so the conclusion as a whole doesn't follow.** I used the 標準 length without asking, since the essay is short (about 1,500 characters) and has one main conclusion.
+kindness_essay の mext分析が終わりました。原文は約 520 字で主な結論が一つなので、長さは「標準」にしています。`mext audit` の項目はすべて ✓ です。
 
-## 0. 結論
+## §0. 結論
 
-- **(a) 形式的に導けるか**: 前半「評判への投資だけでは説明できない」は preferred Extension（E2）で導けます。後半「想像にも支えられている」は導けず、第6段落の結論全体も成り立ちません。後半を支える乙川説への賛同（第4段落）が、著者自身の第5段落の留保（「示唆するにとどまる」「因果の向きはわからない」）に阻却されるからです。
-- **(b) 実質的に説得的か**: 前半は山道の一事例だけに頼っています。しかも、その例が評判説の反例になるかは争えます（助けられた本人は見ている）。後半の根拠は伝聞（「話をよく聞く」）で、その飛躍は著者自身が認めています。全体として、結論は著者が自分で置いた留保を越えています。
-- **(c) 何に依存しているか**（sensitivity の出力より）:
-  - 前半の否定は、doubtful の評価「人目のない場面での親切は評判への投資にならない」（p4）と、主張「山道反例」（p5）のそれぞれ一つだけで崩れます。
-  - 第6段落の結論は、留保の主張（p11）か、その根拠の「著者の主張」（p13）を外すと成り立つようになります。
-  - つまり成否は、第5段落を賛同への阻却（`!> $賛同`）と読むかどうかで決まります。この読みは私の書き起こしの判断です。
-  - 逆の読み（`!>` を外した試算）でも結論は一本の鎖のままで、doubtful の評価（p4 と p7）のどちらか一つが崩れれば成り立ちません。
-- **検証の範囲**: 評価 3 個（未審査 0・ok 0・doubtful 3・reject 0）。最終的な結論 4 個のうち、成り立つものは 2 個です。対立する命題（否定）が理論にないものは 3 個で、これらは反対の根拠に勝ったのではなく、反対の根拠が書かれていないだけです。
+- **(a) 形式的に導けるか**: 導けます。Extension は 1 個（preferred）で、第6段落の結論「見知らぬ人への親切は、評判への投資だけでは説明できず、自分も困るかもしれないという想像にも支えられている」は懐疑的帰結に入ります。
+- **(b) 実質的に説得的か**:
+  - 前半（評判だけでは説明できない）は、おおむね説得的です。
+  - 後半（想像にも支えられている）は弱いです。根拠は「旅先で助けられた経験のある人ほど親切だという話をよく聞く」という伝聞の相関だけです。著者自身が第5段落で「因果の向きはわからない」と認めているのに、第6段落でそのまま結論しています。
+- **(c) 何に依存しているか**: 結論は、単独で外すと成り立たなくなる doubtful の評価 2 つに依存しています。
+  - p4「人目のない山道では助けても評判は得られない」
+  - p7「経験と親切の結びつきは、困るかもしれないという想像が親切を生むことを示す」
 
-## 確認したこと
+  独立した経路はなく、優先順位や補った前提にも依存しません。
+- **形式化して見えたこと**: 第5段落の留保は、書き起こすとどの結論にもつながらない「行き止まりの主張」になります。次の二つの試算では、どちらでも結論が成り立たなくなりました。
+  - 留保を賛同の例外と読む（`alt-caveat`）
+  - p7 を reject にする（`alt-reject`）
 
-- 構文エラー・lint の警告はともに 0 件です。
-- verify は、通常のものも `--skeptical` も OK でした。
-- Lean で `kindness_essay.lean` を確認し、エラーはありませんでした。
-- 事前の予測は、preferred Extension の中身ではすべて当たりました。外れたのは、予測で Extension を 1 個としたことで、実際は 2 個（preferred 1 個）でした。優先順位と Extension の数を混同した、私の直観の誤りです。
+  第5段落の言葉どおりに根拠を評価すると、言えるのは「評判だけでは説明できない」までです。原文の結論は、著者自身の留保を無視することに依存しています。
+- **検証の範囲**: 評価 3 個はすべて doubtful で、doubtful は推論を止めません。最終的な結論 3 個にはどれも対立する命題がありませんが、これは反対の根拠に勝ったのではなく、反対の根拠が書かれていないだけです。
 
-書き起こしと審査を同じ AI がしています。特に結論を決めている第5段落の読み（`kindness_essay.matcha` の L47–49 と、メモ §3）は、別の AI か人に見てもらうことを勧めます。
+事前の予測は、結果も、見込んでいた食い違い（形式的には導けるが実質的には疑わしい）も当たりました。書き起こしと審査を同じ AI がしているので、`kindness_essay.matcha` を別の AI か人に見てもらうことを勧めます。
 
-レポートの「道具について」に mext への指摘を二つ書きました（どちらも summary の表示についてです）。
-- **成り立たない結論に「反対の根拠が理論にない」と出る**: 第6段落の結論は否定に負けたのではなく、例外（`!>`）による阻却で成り立たないので、この表示は誤解を招きます。
-- **否定が成り立つ行の「決め手」の列が「—」になる**: 前半の否定の行がそうですが、sensitivity では p4・p5 に依存しています。
+## 道具について（レポート末尾に記載）
 
-作業ディレクトリへのコミットはしていません。
+- `review` で評価のない要件を素の文言（`"因果の向きがわからない"`）で指すと、判断が効きませんでした。`[atoms]` の表記（`"留保／%因果の向きがわからない"`）に直すと効きました。`ai_judgments.md` には「要件の素の文言でも指せる」とあるので、手引きと実装が食い違っている可能性があります。
+- `supplied` に結論の文言を書くと、候補に当たりませんでした。主張のラベル（`"評判説"`）に直して解決しています。結論を補ったときの書き方が手引きにあるとよさそうです。
+- `kindness_essay.lean` は書き出しましたが、Lean では検査していません。
 
-ファイルは `tests/analysis_runs4/kindness_essay/` にあります（原文は書き換えていません）。
-- **`kindness_essay.mext-analysis.md`**（最終レポート）
-- `kindness_essay.matcha`
-- `kindness_essay.matcha.md`
-- `kindness_essay.check.mext`
-- `kindness_essay.mext`
-- `kindness_essay.alt-noundercut.matcha`
-- `kindness_essay.alt-noundercut.mext`
-- `kindness_essay.alt-noundercut.sensitivity.md`
-- `kindness_essay.summary.md`
-- `kindness_essay.connectives.md`
-- `kindness_essay.sensitivity.md`
-- `kindness_essay.report-tables.md`
-- `kindness_essay.lean`
+## ファイル（`tests/analysis_runs6/kindness_essay/`）
+
+| ファイル | 内容 |
+|---|---|
+| `kindness_essay.mext-analysis.md` | レポート |
+| `kindness_essay.matcha` | 書き起こし |
+| `kindness_essay.matcha.md` | メモ（事前の予測を含む） |
+| `kindness_essay.check.mext` | 形の点検と、書き起こし時点のハッシュ |
+| `kindness_essay.mext` | `[ai]`・`[claimed]` と計算結果 |
+| `kindness_essay.summary.md` / `.sensitivity.md` / `.connectives.md` | mext の出力 |
+| `kindness_essay.lean` | Lean への書き出し（未検査） |
+| `kindness_essay.alt-caveat.matcha` / `.mext` | 試算: 留保を賛同の例外とした版 |
+| `kindness_essay.alt-reject.mext` | 試算: p7 を reject とした版 |
+
+原文は変えていません。git commit はまだしていません。作業ツリーに 0.3.5 以降の未コミットの変更が多くあるので、このディレクトリだけをコミットするかどうか指示してください。
