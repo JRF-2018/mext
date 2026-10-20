@@ -81,6 +81,7 @@ class Theory:
         self.aliases = {}      # 別名（ラベル・元の文言・neg/same 前の文言）-> リテラルの集合
         self.rejected = set()  # AI の審査で棄却された評価の原子
         self.eval_status = {}  # 評価の文言 -> 実際に効いた review（ok / doubtful / reject / None）
+        self.app_status = []   # 評価のないあてはめ（確定規則として読まれる）: (要件の文言, 行, review か None, 注)
         self.notes = []
 
     def alias(self, text, l):
@@ -247,6 +248,15 @@ def parse_ai_line(line, ai, lineno, errs):
             errs.append(_t('[ai] {n} 行目を解釈できません: {l}', '[ai] cannot parse line {n}: {l}', n=lineno, l=line.strip()))
     except IndexError:
         errs.append(_t('[ai] {n} 行目を解釈できません: {l}', '[ai] cannot parse line {n}: {l}', n=lineno, l=line.strip()))
+
+
+def has_eval(n):
+    """事実の部分に @評価 があるか"""
+    if n is None:
+        return False
+    if getattr(n, 'eval', None):
+        return True
+    return any(has_eval(x) for x in getattr(n, 'items', []) or [])
 
 
 def quote_text(n):
@@ -537,6 +547,8 @@ class Compiler:
                   or (self.ai.review.get(n.label) if n.label else None))
         if n.facts is not None:
             target = -r if m == '!' else r
+            if not has_eval(n.facts):
+                self.th.app_status.append((key, n.line, review[0] if review else None, review[1] if review else ''))
             l = self.facts(n.facts, target)
             if l and review and review[0] == 'reject':
                 self.th.notes.append(_t('AI の審査で棄却されたあてはめ: {k} <= {f}', 'application rejected by the AI review: {k} <= {f}',
@@ -832,26 +844,22 @@ def preferred(th, E, hi):
                     changed = True
         return S
 
-    seen = set()
-
-    def dfs(S, applied):
-        if applied == GD:
-            return S == E
-        key = frozenset(applied)
-        if key in seen:
+    # 各 gi を適用してよいかの条件（前提が S にある、優先する対立デフォルトが S で打ち負かされている）は、
+    # S が大きくなっても失われない（単調）。だから適用の順序は結果に効かず、適用できるものを
+    # 適用できる限り適用する貪欲な閉包で、条件を満たす列があるかが決まる（以前の深さ優先探索と同じ答えで、指数的にならない）
+    S = close_rules(set(th.W))
+    applied = set()
+    while applied != GD:
+        step = [g for g in sorted(GD - applied)
+                if all(p in S for p in defs[g].pre)
+                and not any(r.name in hi[g] and not any(-j in S for j in r.just) for r in rivals)]
+        if not step:
             return False
-        seen.add(key)
-        for g in sorted(GD - applied):
-            d = defs[g]
-            if not all(p in S for p in d.pre):
-                continue
-            if any(r.name in hi[g] and not any(-j in S for j in r.just) for r in rivals):
-                continue   # より優先される対立デフォルトが、この時点ではまだ打ち負かされていない
-            if dfs(close_rules(S | set(d.concl)), applied | {g}):
-                return True
-        return False
-
-    return dfs(close_rules(set(th.W)), frozenset())
+        for g in step:
+            applied.add(g)
+            S |= set(defs[g].concl)
+        S = close_rules(S)
+    return S == E
 
 
 def solve(th):
@@ -911,6 +919,8 @@ def scope(th, exts, pref):
     return {'facts_total': len(wf), 'facts': facts, 'supplied': len(getattr(th, 'supplied', {})),
             'evals': len(st), 'unreviewed': sum(1 for x in st if x is None), 'ok': st.count('ok'),
             'doubtful': st.count('doubtful'), 'reject': st.count('reject'),
+            'apps': len(getattr(th, 'app_status', [])),
+            'apps_reviewed': [x for x in getattr(th, 'app_status', []) if x[2]],
             'finals': finals, 'finals_hold': [l for l in finals if sk and l in sk],
             'unopposed': [l for l in finals if not opposed(th, l)]}
 
@@ -920,6 +930,13 @@ def scope_text(th, sc):
     t = _t('評価 {n} 個（未審査 {u}・ok {o}・doubtful {d}・reject {r}。doubtful と未審査の評価も推論を止めない）。',
            '{n} evaluations (unreviewed {u}, ok {o}, doubtful {d}, reject {r}; doubtful and unreviewed evaluations do not stop inference). ',
            n=sc["evals"], u=sc["unreviewed"], o=sc["ok"], d=sc["doubtful"], r=sc["reject"])
+    rv = sc.get('apps_reviewed') or []
+    if sc.get('apps') and (rv or not sc['evals']):
+        # 評価（@）のないあてはめは確定規則として読まれ、評価の集計に入らない。審査が書かれていれば、その内訳を出す
+        cnt = {k: sum(1 for x in rv if x[2] == k) for k in ('ok', 'doubtful', 'reject')}
+        t += _t('評価のないあてはめ {n} 個（確定規則として読まれる。review あり {k}: ok {o}・doubtful {d}・reject {r}）。',
+                '{n} applications without an evaluation (read as strict rules; reviewed {k}: ok {o}, doubtful {d}, reject {r}). ',
+                n=sc['apps'], k=len(rv), o=cnt['ok'], d=cnt['doubtful'], r=cnt['reject'])
     if sc.get('facts_total') and sc['facts']['未分類'] < sc['facts_total']:
         kinds = [(FACT_KIND_JA2EN.get(k, 'unclassified') if _en() else k, v) for k, v in sc['facts'].items() if v]
         t += _t('W の事実 {n} 個（{k}。種別は AI の判断。仮定と著者の主張は感度分析で外す候補にする）。',

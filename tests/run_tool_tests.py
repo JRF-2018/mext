@@ -325,6 +325,77 @@ try:
 finally:
     shutil.rmtree(d)
 
+# --- 評価のないあてはめの審査（確定規則として読まれる）
+d = tempfile.mkdtemp()
+try:
+    for f in ('minor_contract.matcha', 'minor_contract.mext'):
+        shutil.copy(os.path.join(EX, f), d)
+    mp = os.path.join(d, 'minor_contract.mext')
+    txt = open(mp, encoding='utf-8').read().replace('[ai]\n', '[ai]\nreview "特則／%取消しの意思表示" doubtful ; 原文の読み: 到達まで含むか不明\n', 1)
+    open(mp, 'w', encoding='utf-8').write(txt)
+    mf, th, _ = analysis.load(mp)
+    exts, pref, _ = core.solve(th)
+    st = core.scope_text(th, core.scope(th, exts, pref))
+    md = analysis.summary_md(th, mf, mp)
+    check('scope: 評価のないあてはめの数と審査を示す', '評価のないあてはめ' in st and 'doubtful 1' in st, st)
+    check('summary: doubtful とした評価のないあてはめを示す', '## 評価のないあてはめの審査' in md and '到達まで含むか不明' in md, md[-800:])
+finally:
+    shutil.rmtree(d)
+
+# --- preferred の判定（貪欲な閉包）が、適用の順序をすべて試す定義どおりの判定と一致する
+import random as _random
+
+
+def preferred_bruteforce(th, E, hi):
+    if E == core.INCONSISTENT:
+        return True
+    GD = list(core.generating(th, E))
+    rivals = [d for d in th.defaults.values() if d.name not in GD and all(p in E for p in d.pre)]
+
+    def close(S):
+        S = set(S)
+        while True:
+            new = {r.head for r in th.rules if r.head not in S and all(b in S for b in r.body)}
+            if not new:
+                return S
+            S |= new
+    for order in itertools.permutations(GD):
+        S, ok = close(th.W), True
+        for g in order:
+            d = th.defaults[g]
+            if not all(p in S for p in d.pre) or any(r.name in hi[g] and not any(-j in S for j in r.just) for r in rivals):
+                ok = False
+                break
+            S = close(S | set(d.concl))
+        if ok and S == E:
+            return True
+    return False
+
+
+import itertools
+rng = _random.Random(7)
+bad, n_checked, n_false = 0, 0, 0
+for _ in range(300):
+    th = core.Theory()
+    atoms = [th.atom('extra', str(i)) for i in range(5)]
+    lits = atoms + [-a for a in atoms]
+    th.W = rng.sample(atoms, rng.randrange(3))
+    for j in range(6):
+        c = rng.choice(lits)
+        th.add_default(core.Default(str(j), rng.sample(lits, rng.randrange(3)), [c] + rng.sample(lits, rng.randrange(2)), [c], 'extra'))
+    for j in range(3):
+        th.add_rule(rng.sample(lits, rng.randrange(3)), rng.choice(lits))
+    th.priority = {tuple(rng.sample(list(th.defaults), 2)) for _ in range(rng.randrange(1, 5))}
+    exts, _ = core.extensions(th)
+    hi = core.priority_closure(th.priority, list(th.defaults))
+    for E in exts:
+        a, b = core.preferred(th, E, hi), preferred_bruteforce(th, E, hi)
+        n_checked += 1
+        n_false += not b
+        bad += a != b
+check(f'preferred: 貪欲な判定が、順序をすべて試す判定と一致する（{n_checked} 個の Extension、うち preferred でないもの {n_false} 個）',
+      bad == 0 and n_false > 0, str(bad))
+
 # --- compare（読みの比較）
 from mext import compare
 cf = compare.CompareFile(os.path.join(TC, 'views.compare')).load()

@@ -959,6 +959,16 @@ def summary_md(th, mf, path):
     if len(ranked) > 8:
         out.append(_t('- ほか {n} 個（mext sensitivity の「AI が doubtful とした評価」を見る）',
                       '- {n} more (see “Evaluations the AI marked doubtful” in mext sensitivity)', n=len(ranked) - 8))
+    apps = [x for x in getattr(th, 'app_status', []) if x[2] in ('doubtful', 'reject')]
+    if apps:
+        out += ['', _t('## 評価のないあてはめの審査（確定規則として読まれ、感度分析の候補にならない）',
+                       '## Reviews of applications without an evaluation (read as strict rules; not candidates in the sensitivity analysis)'), '']
+        for key, line, st, note in apps:
+            sn = source_note(th, line)
+            out.append(f'- {q(key)} 〔{st}〕' + (_t(': AI の理由: {w}', ': AI’s reason: {w}', w=note) if note else '')
+                       + _t('（L{l}{s}）', ' (L{l}{s})', l=line, s=(' / ' + sn) if sn else ''))
+        out.append(_t('（doubtful でも推論は止まらない。争うなら、あてはめを `事実@評価` の形に書き直すと、感度分析で外せる）',
+                      '(doubtful does not stop inference. To contest it, rewrite the application as `fact@evaluation` so that the sensitivity analysis can remove it)'))
     sj = shared_judgments(res)
     if sj:
         out += ['', _t('## 複数の経路に共通する判断', '## Judgments shared by several paths'), '']
