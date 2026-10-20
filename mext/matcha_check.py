@@ -452,7 +452,16 @@ class Parser:
                 item = Node('priority', t, self.cur_indent, True)
                 item.head = list(t.value)
             elif self.optype(t) in CONT_OPS or t.type in ('AS', 'NOT'):
-                self.err(t, f'{t.value} を受け取れる要素が直前にありません')
+                hint = ''
+                # 同じ行で <= の後に「…」が来ていれば、事実の文が「 で始まって要件と読まれた可能性が高い
+                q = self.p - 1
+                while q > 0 and self.toks[q].line == t.line and self.toks[q].type != 'NL':
+                    if self.toks[q].type == 'QUOTE' and self.toks[q - 1].type == 'OP' and self.toks[q - 1].value == '<=':
+                        hint = ('（<= の後の「…」が、事実ではなく要件「…」と読まれています。事実の文が発言などの引用で始まるなら、'
+                                '『』に替えてください）')
+                        break
+                    q -= 1
+                self.err(t, f'{t.value} を受け取れる要素が直前にありません{hint}')
                 self.adv()
                 continue
             else:
@@ -779,6 +788,11 @@ def check_semantics(doc, diags):
                     diags.append(Dn('error', n, f'優先の対象 ${e} は定義されていません'))
         if n.kind == 'issue' and n.norm is None and n.conclusion is None and n.application is None and n.reason is None:
             diags.append(Dn('warning', n, '論点（?）に規範（=>）も結論（>>）もありません'))
+        if n.facts is not None:
+            for x in (n.facts.items if n.facts.kind == 'group' else [n.facts]):
+                if x.kind == 'req' and x.quote:
+                    diags.append(Dn('warning', x, f'<= の後の「{x.head}」{x.suffix or ""} が、事実ではなく要件と読まれました。'
+                                                  '事実の文が発言などの引用で始まるなら『』に替え、要件なら : でつないでください'))
         if n.kind == 'fact' and n.label and re.fullmatch(r'[a-z]+', n.label):
             # 英文の行末の「… as drivers」は、ラベル付けとして読まれ、事実の文が切れる
             diags.append(Dn('warning', n, f'事実「{n.head}」の後の「as {n.label}」がラベル付けとして読まれました。'

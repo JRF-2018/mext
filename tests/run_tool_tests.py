@@ -93,6 +93,17 @@ th = theory(os.path.join(TC, 'bare_neg.mext'))
 exts, pref, _ = core.solve(th)
 check('neg: 結論の素の文言で書いた neg も効く（対立して Extension が二つになる）', len(exts) == 2, str(len(exts)))
 
+th = theory(os.path.join(TC, 'shared_eval.mext'))
+res = analysis.sensitivity(th)
+l = core.lit_from_text(th, '義務がある')
+p = res['per'][l]
+cands = {c.id: c for c in res['cands']}
+kinds1 = {cands[x].kind for x in p['singles']}
+check('sensitivity: 同じ評価を判断ごと外すと結論が消える（評価の原子を単位とする候補）', 'eval-all' in kinds1, str(kinds1))
+check('sensitivity: あてはめ一か所ずつ外しても結論は残る', 'eval-one' not in kinds1, str(kinds1))
+md = analysis.sensitivity_md(th, res, 'shared_eval.mext')
+check('sensitivity: 判断ごとと一か所ずつの違いを言葉で示す', '一か所ずつ外しても' in md and '複数の経路に共通する弱点' in md)
+
 # --- 検証の範囲
 th = theory(os.path.join(TC, 'three_paths.mext'))
 exts, pref, _ = core.solve(th)

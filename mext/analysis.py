@@ -74,18 +74,31 @@ class Cand:
             cid, kind, key, label, text, line, review
 
 
-KIND_JA = {'eval': '評価', 'issue': '論点', 'reason': '理由', 'extra': '追加のデフォルト', 'claim': '主張',
+KIND_JA = {'eval': '評価', 'eval-all': '評価（判断ごと。すべてのあてはめ）', 'eval-one': '評価（あてはめ一か所）', 'issue': '論点', 'reason': '理由', 'extra': '追加のデフォルト', 'claim': '主張',
            'fact': '事実', 'extra-fact': '追加の事実', 'fact-仮定': '事実（仮定）', 'fact-著者の主張': '事実（著者の主張）'}
 
 
 def candidates(th, facts=False):
     out = []
+    # 同じ評価（事実@評価）が複数の箇所であてはめられていると、評価の原子一つを複数のデフォルトが支える。
+    # そのときは「あてはめ一か所を外す」（デフォルト一つ）と「この判断を採らない」（原子を支えるデフォルトすべて。
+    # review reject と同じ）を別の候補にする
+    multi = {}
+    for d in th.defaults.values():
+        if d.kind == 'eval':
+            multi.setdefault(d.concl[0], []).append(d)
     for d in th.defaults.values():
         if d.kind in ('eval', 'issue', 'reason', 'extra', 'claim'):
             if d.kind == 'eval':
                 text = th.lit_text(d.concl[0])
                 rv = th.reviews.get(text)
                 review = rv[0] if rv else ''
+                ds = multi[d.concl[0]]
+                if len(ds) > 1:
+                    if d is ds[0]:
+                        out.append(Cand(None, 'eval-all', ('a', d.concl[0]), '+'.join(x.name for x in ds), text, d.line, review))
+                    out.append(Cand(None, 'eval-one', ('d', d.name), f'{d.name}（L{d.line} のあてはめ）', text, d.line, review))
+                    continue
             elif d.kind == 'claim':
                 text = th.lit_text(d.concl[0])
                 review = ''
@@ -106,7 +119,11 @@ def candidates(th, facts=False):
 
 
 def drop(th, cands):
-    return variant(th, [c.key[1] for c in cands if c.key[0] == 'd'], [c.key[1] for c in cands if c.key[0] == 'f'])
+    names = [c.key[1] for c in cands if c.key[0] == 'd']
+    atoms = {c.key[1] for c in cands if c.key[0] == 'a'}
+    if atoms:
+        names += [d.name for d in th.defaults.values() if d.kind == 'eval' and d.concl[0] in atoms]
+    return variant(th, names, [c.key[1] for c in cands if c.key[0] == 'f'])
 
 
 def default_targets(th, sk):
@@ -204,13 +221,15 @@ def sensitivity(th, targets=None, size='auto', facts=False):
 
 def resolve(th, cands, text):
     """[ai] の concern / distinct に書いた文言（評価・主張の文言、ラベル、デフォルト名、候補 ID）から候補を得る"""
-    for c in cands:
+    for c in sorted(cands, key=lambda c: c.kind != 'eval-all'):
         if text in (c.id, c.text, str(c.label)):
             return c
     l = core.lit_from_text(th, text)
     if l is None:
         return None
     for c in cands:
+        if c.key == ('a', l):
+            return c
         if c.key[0] == 'd' and th.defaults[c.key[1]].concl and th.defaults[c.key[1]].concl[0] == l:
             return c
         if c.key == ('f', l):
@@ -319,6 +338,23 @@ def fmt_groups(p, limit=8):
     return shown + (f'; ほか {len(groups) - limit} 組' if len(groups) > limit else '')
 
 
+def shared_judgments(res):
+    """判断ごと外すと結論が消えるが、あてはめを一か所ずつ外しても消えない評価: [(判断の候補, あてはめの候補, 結論)]"""
+    dep1 = {}
+    for l, p in res['per'].items():
+        for x in (p or {}).get('singles', []):
+            dep1.setdefault(x, []).append(l)
+    out = []
+    for c in res['cands']:
+        if c.kind != 'eval-all' or c.id not in dep1:
+            continue
+        sib = [x for x in res['cands'] if x.kind == 'eval-one' and x.text == c.text]
+        keep = [l for l in dep1[c.id] if not any(l in dep1.get(x.id, []) for x in sib)]
+        if keep:
+            out.append((c, sib, keep))
+    return out
+
+
 def sensitivity_md(th, res, path):
     cands = {c.id: c for c in res['cands']}
     out = [f'# 感度分析: {os.path.basename(path)}', '',
@@ -356,7 +392,8 @@ def sensitivity_md(th, res, path):
         for x in dict.fromkeys(y for g in p['groups'] for y in g):
             if x not in p['singles']:
                 depg.setdefault(x, []).append(l)
-    doubt = [c for c in res['cands'] if c.review in ('doubtful',)]
+    doubt = [c for c in res['cands'] if c.review in ('doubtful',)
+             and not (c.kind == 'eval-one' and c.id not in dep1 and c.id not in depg)]
     out += ['', '## AI が doubtful とした評価', '']
     if not doubt:
         out.append('（なし）')
@@ -364,6 +401,13 @@ def sensitivity_md(th, res, path):
         parts = []
         if c.id in dep1:
             parts.append('**単独で外すと成り立たなくなる**: ' + '、'.join(f'「{th.lit_text(l)}」' for l in dep1[c.id]))
+            if c.kind == 'eval-all':
+                sib = [x for x in res['cands'] if x.kind == 'eval-one' and x.text == c.text]
+                keep = [l for l in dep1[c.id] if not any(l in dep1.get(x.id, []) for x in sib)]
+                if keep:
+                    parts.append(f'ただし、あてはめ {len(sib)} か所を一か所ずつ外しても '
+                                 + '、'.join(f'「{th.lit_text(l)}」' for l in keep)
+                                 + ' は残る（この判断が複数の経路に共通する弱点である）')
         if c.id in depg:
             parts.append('組の一員（これ一つを外しても残るが、これを含む組を外すと成り立たなくなる）: '
                          + '、'.join(f'「{th.lit_text(l)}」' for l in depg[c.id]))
@@ -388,6 +432,16 @@ def sensitivity_md(th, res, path):
         out.append('（なし）')
     for cid, l in res['appear']:
         out.append(f'- {cid} を外すと「{th.lit_text(l)}」が成り立つ（{cands[cid].text} が、それを打ち消していた）')
+    shared = [f'- {c.id}「{c.text}」（あてはめ {len(sib)} か所: {", ".join(x.id for x in sib)}）: '
+              f'あてはめを一か所ずつ外しても ' + '、'.join(f'「{th.lit_text(l)}」' for l in keep)
+              + ' は残るが、判断ごと外すと成り立たなくなる。この判断が複数の経路に共通する弱点である'
+              for c, sib, keep in shared_judgments(res)]
+    if shared:
+        out += ['', '## 複数の経路に共通する判断', ''] + shared
+    if any(c.kind == 'eval-all' for c in res['cands']):
+        out += ['', '注: 同じ評価が複数の箇所にあてはめられているときは、「評価（判断ごと）」と「評価（あてはめ一か所）」を別の候補にした。'
+                '前者はその判断を採らないこと（review reject と同じ）、後者はあてはめの経路を一つだけ外すことである。'
+                '経路を一つ外しても結論が残るのに、判断ごと外すと結論が消えるなら、その判断が複数の経路に共通する弱点である。']
     out += ['', '注: 「組で外すと」は、単独では結論が残るが、組で外すと成り立たなくなる極小の組である（同じ結論への独立した経路が複数ある場合に現れる）。'
             '「極小の支持の組」は、候補をこの順に外せるだけ外して、なお結論が残る組の一例で、ほかの組もありうる。'
             '^根拠（条文・原理の名前）は表示であって、独立に立証される前提ではないので、候補には入らない。']
@@ -603,9 +657,9 @@ def trial_files(path, text):
 # ---------------------------------------------------------------------------
 def short(c, n=36):
     """候補の短い表示: 評価は「@評価」の部分だけ"""
-    t = c.text.rsplit('@', 1)[1] if c.kind == 'eval' and '@' in c.text else c.text
+    t = c.text.rsplit('@', 1)[1] if c.kind.startswith('eval') and '@' in c.text else c.text
     t = t if len(t) <= n else t[:n - 1] + '…'
-    mark = '〔doubtful〕' if c.review == 'doubtful' else ('〔未審査〕' if c.kind == 'eval' and not c.review else '')
+    mark = '〔doubtful〕' if c.review == 'doubtful' else ('〔未審査〕' if c.kind.startswith('eval') and not c.review else '')
     return f'{c.id}「{t}」{mark}'
 
 
@@ -660,10 +714,10 @@ def summary_md(th, mf, path):
             if any(c.review == 'doubtful' for c in singles):
                 notes.append('doubtful の評価に依存')
             for x in p['singles']:
-                if cands[x].kind == 'eval' and cands[x].review in ('doubtful', ''):
+                if cands[x].kind.startswith('eval') and cands[x].review in ('doubtful', ''):
                     contested.setdefault(x, {'1': [], 'g': []})['1'].append(l)
             for x in dict.fromkeys(y for g2 in p['groups'] for y in g2):
-                if x not in p['singles'] and cands[x].kind == 'eval' and cands[x].review in ('doubtful', ''):
+                if x not in p['singles'] and cands[x].kind.startswith('eval') and cands[x].review in ('doubtful', ''):
                     contested.setdefault(x, {'1': [], 'g': []})['g'].append(l)
         if st0 == 'holds' and not core.opposed(th, l):
             notes.append('反対の根拠が理論にない')
@@ -691,12 +745,29 @@ def summary_md(th, mf, path):
         sn = source_note(th, c.line)
         if sn:
             nav.append(sn)
+        ai_ln = [i for i, ln in mf.ai_lines if c.text in ln]
+        if ai_ln:
+            nav.append(f'[ai] {ai_ln[0]} 行目')
         tf = trial_files(path, c.text)
         if tf:
             nav.append('試算: ' + '、'.join(tf))
         out.append(f'- {short(c, 50)}: ' + '。'.join(parts) + (f'（{" / ".join(nav)}）' if nav else ''))
     if len(ranked) > 8:
         out.append(f'- ほか {len(ranked) - 8} 個（mext sensitivity の「AI が doubtful とした評価」を見る）')
+    sj = shared_judgments(res)
+    if sj:
+        out += ['', '## 複数の経路に共通する判断', '']
+        for c, sib, keep in sj:
+            out.append(f'- {short(c, 50)}（あてはめ {len(sib)} か所）: 一か所ずつ外しても {names(keep)} は残るが、'
+                       '判断ごと外すと成り立たなくなる')
+    # 導出のたどり方（最終的な結論ごとに、それを含む preferred Extension で explain する）
+    cmds = []
+    for l in shown[:6]:
+        idx = [i for i, (E, p) in enumerate(zip(exts, pref), 1) if p and E != INCONSISTENT and l in E]
+        if idx:
+            cmds.append(f'python3 -m mext explain {os.path.basename(path)} E{idx[0]} "{th.lit_text(l)}"')
+    if cmds:
+        out += ['', '## 導出をたどる', '', '```'] + cmds + ['```']
     if res.get('concerns'):
         out += ['', '## 争点のまとまり（[ai] の concern）', '']
         for c in res['concerns']:

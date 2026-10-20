@@ -1,0 +1,80 @@
+@mext 1
+theory: shared_eval.matcha
+source: shared_eval.matcha sha256=6afef533caaf70d7
+; MEXT: Matcha EXTension notation。書式は mext の docs/mext.md（スキルでは references/mext.md）を参照。
+
+[ai]
+; AI（または人）の判断。各行の ; 以降に理由を書く。
+;   same "代表の文言" "同じ意味の文言"
+;   neg  "文言A" "文言B"        … B は A の否定
+;   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む
+;   review "事実@評価" ok|doubtful|reject
+;   concern 名 "前提" "前提" …    … 内容の上で一つの争点を共有する前提（感度分析でまとめて外す）
+;   distinct "前提" "前提" …      … 内容の上で互いに独立な前提
+;   connective "主張のラベルか要件の文言" 明示|読み … 結び方（AND/OR）が原文に明示されているか
+;   fact-kind "事実" 記述|仮定|確認済み|著者の主張 … W の事実の種別
+
+[extra]
+;   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2
+
+[claimed]
+;   E1*: "文言", -"文言"   … 検証したい Extension（* は preferred であることも主張）
+
+; ===== ここから下は mext.py が自動生成（手で直さない） =====
+[atoms]
+k1     claim  "#経路A^原理A [A]"  ; L2
+f1     fact   "本件"  ; L2,L5,L8
+r1     req    "A／%Aの要件"  ; L3
+f2     fact   "便益がある"  ; L3,L6
+v1     eval   "便益がある@便益は義務の理由になる"  ; L3,L6
+c1     concl  "理由Aがある〔本件〕"  ; L4
+k2     claim  "#経路B^原理B [B]"  ; L5
+r2     req    "B／%Bの要件"  ; L6
+c2     concl  "理由Bがある〔本件〕"  ; L7
+k3     claim  "#結論 [結論]"  ; L8
+r3     req    "結論／$A"  ; L9
+r4     req    "結論／$B"  ; L9
+x1     aux    "（L9 の OR・2項・1）"  ; L9
+c3     concl  "義務がある〔本件〕"  ; L10
+
+[W]
+f1, f2
+
+[rules]
+r1: v1 -> r1  ; L3 %Aの要件
+r2: -v1 -> -r1  ; L3 %Aの要件（必要条件の否定）
+r3: -r1 -> -k1  ; L2 要件の否定による主張 A の不成立
+r4: v1 -> r2  ; L6 %Bの要件
+r5: -v1 -> -r2  ; L6 %Bの要件（必要条件の否定）
+r6: -r2 -> -k2  ; L5 要件の否定による主張 B の不成立
+r7: r3 -> x1  ; OR
+r8: r4 -> x1  ; OR
+r9: -r3 & -r4 -> -x1  ; OR（すべての選択肢の否定）
+r10: -x1 -> -k3  ; L8 要件の否定による主張 結論 の不成立
+r11: k1 -> r3  ; L9 $A の参照
+r12: -k1 -> -r3  ; L9 $A の参照（必要条件の否定）
+r13: k2 -> r4  ; L9 $B の参照
+r14: -k2 -> -r4  ; L9 $B の参照（必要条件の否定）
+
+[defaults]
+e1: f2 : v1, r1 / v1  ; eval L3 評価 @便益は義務の理由になる
+A: f1, r1 : k1, c1 / k1, c1  ; claim L2 主張 ^原理A
+e2: f2 : v1, r2 / v1  ; eval L6 評価 @便益は義務の理由になる
+B: f1, r2 : k2, c2 / k2, c2  ; claim L5 主張 ^原理B
+結論: f1, x1 : k3, c3 / k3, c3  ; claim L8 主張
+
+[priority]
+
+[extensions]
+; 衝突しうるデフォルト: なし
+E1 preferred:
+  generating: e1, A, e2, B, 結論
+  literals: k1, f1, r1, f2, v1, c1, k2, r2, c2, k3, r3, r4, x1, c3
+
+[marks]
+
+[summary]
+extensions: 1 (preferred: 1)
+skeptical: k1, c1, k2, c2, k3, c3
+credulous: k1, c1, k2, c2, k3, c3
+; 検証の範囲: 評価 1 個（未審査 1・ok 0・doubtful 0・reject 0。doubtful と未審査の評価も推論を止めない）。最終的な結論 1 個のうち、成り立つもの 1 個、理論の中に対立する命題（否定）がないもの 1 個（これらは、反対の根拠に勝ったのではなく、反対の根拠が書かれていないだけである）。
