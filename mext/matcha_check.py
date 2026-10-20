@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-matcha_check.py -- Matcha / Matcha-D の決定論的な構文チェッカ
+matcha-check（python3 -m mext.matcha_check） -- Matcha / Matcha-D の決定論的な構文チェッカ
 
 Matcha (https://www.elecode.jp/matcha) は花房孟胤氏による法的推論の形式言語である。
 公式の BNF は公開されていないため、このチェッカの文法は Elecode のページと
@@ -15,9 +15,9 @@ Matcha-D は本レポートによる最小拡張:
     :: 優先 $d2 > $d1         … 例外関係とは別に優先順位だけを宣言する注釈行（任意）
 
 使い方:
-    python3 matcha_check.py FILE.matcha            # エラー・警告の一覧（エラーがあれば終了コード 1）
-    python3 matcha_check.py --tree FILE.matcha     # 構文木を人が読める形で表示
-    python3 matcha_check.py --json FILE.matcha     # 構文木を JSON で出力
+    matcha-check FILE.matcha            # エラー・警告の一覧（エラーがあれば終了コード 1）
+    matcha-check --tree FILE.matcha     # 構文木を人が読める形で表示
+    matcha-check --json FILE.matcha     # 構文木を JSON で出力
 
 依存ライブラリなし（Python 3.8 以降）。
 """
@@ -962,11 +962,11 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description='Matcha / Matcha-D 構文チェッカ (syntax checker)')
     ap.add_argument('files', nargs='+')
     ap.add_argument('--lang', choices=['ja', 'en'], help='出力の言語（既定は環境変数 MEXT_LANG、なければ ja） / output language')
-    ap.add_argument('--tree', action='store_true', help='構文木を表示')
-    ap.add_argument('--json', action='store_true', help='構文木を JSON で出力')
-    ap.add_argument('--quiet', action='store_true', help='エラーと警告の件数だけを表示')
+    ap.add_argument('--tree', action='store_true', help='構文木を表示 / print the syntax tree')
+    ap.add_argument('--json', action='store_true', help='構文木を JSON で出力 / print the syntax tree as JSON')
+    ap.add_argument('--quiet', action='store_true', help='エラーと警告の件数だけを表示 / print only the numbers of errors and warnings')
     ap.add_argument('--shared-labels', action='store_true',
-                    help='複数のファイルを一つの理論として、ラベルの名前空間を共有して検査する')
+                    help='複数のファイルを一つの理論として、ラベルの名前空間を共有して検査する / check several files as one theory sharing labels')
     args = ap.parse_args(argv)
     if args.lang:
         set_lang(args.lang)

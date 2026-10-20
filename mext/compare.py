@@ -345,8 +345,7 @@ def compare_md(A, B, cf=None, cpath=None):
         dec_a = decisive_count(A)
         dec_b = decisive_count(B)
         for ca, cb, note, how in prem[:40]:
-            ra = ca.review or (_t('未審査', 'unreviewed') if ca.kind.startswith('eval') else '—')
-            rb = cb.review or (_t('未審査', 'unreviewed') if cb.kind.startswith('eval') else '—')
+            ra, rb = review_cell(ca), review_cell(cb)
             out.append(f'| {analysis.esc(analysis.short(ca, 40))} | {analysis.esc(analysis.short(cb, 40))} | '
                        f'{analysis.KIND_JA.get(ca.kind, ca.kind)} | {ra} / {rb} | {dec_a.get(ca.id, 0)} / {dec_b.get(cb.id, 0)} | {analysis.esc(note)} |')
         if len(prem) > 40:
@@ -361,6 +360,13 @@ def compare_md(A, B, cf=None, cpath=None):
         out += [f'- {e}' for e in errs]
         out.append('')
     return '\n'.join(out)
+
+
+def review_cell(c):
+    """審査の欄: 評価は review、事実は [ai] fact-kind の種別"""
+    if c.kind.startswith('fact') and c.review:
+        return core.FACT_KIND_JA2EN.get(c.review, c.review) if _en() else c.review
+    return c.review or (_t('未審査', 'unreviewed') if c.kind.startswith('eval') else '—')
 
 
 def decisive_count(R):

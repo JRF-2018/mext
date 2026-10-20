@@ -6,9 +6,9 @@ MEXT は、本パッケージで考案した、Matcha(-D) から得たデフォ�
 
 1. **人・AI が書く層**: `[ai]`（判断）、`[extra]`（追加の知識）、`[claimed]`（検証したい Extension）
 2. **決定論的に生成される層**: `[atoms]` `[W]` `[rules]` `[defaults]` `[priority]` `[extensions]` `[marks]` `[summary]`
-3. **検証の層**: `mext.py verify`（主張された Extension の検証）、`mext.py lean`（Lean による証明）
+3. **検証の層**: `mext verify`（主張された Extension の検証）、`mext lean`（Lean による証明）
 
-生成される層は、Matcha ファイルと `[ai]` `[extra]` からいつでも再生成できる。`mext.py solve` を実行すると書き直される。
+生成される層は、Matcha ファイルと `[ai]` `[extra]` からいつでも再生成できる。`mext solve` を実行すると書き直される。
 
 ## 1. 論理
 
@@ -109,11 +109,11 @@ E1*: "文言", -"文言", !"文言"     ; "X": X∈E、-"X": ¬X∈E、!"X": X�
 
 ## 4. 複数のファイルからなる理論
 
-Matcha には import がないので、一つの理論を複数のファイルに分けて書く場合は、MEXT のヘッダに `theory:` を複数行書く（`mext.py init A.matcha B.matcha -o X.mext`）。
+Matcha には import がないので、一つの理論を複数のファイルに分けて書く場合は、MEXT のヘッダに `theory:` を複数行書く（`mext init A.matcha B.matcha -o X.mext`）。
 
 - 全ファイルを一つの理論として変換する。ラベルの名前空間は共有され、別ファイルの主張を `!> $ラベル` や `:: 優先` で指せる。
 - 位置は「ファイル名:L12」で表示する。自動で付けるデフォルトの名前も「ファイル名.L12」の形になる。
-- 構文チェックは `matcha_check.py --shared-labels A.matcha B.matcha` で行う（単独で検査すると、別ファイルのラベルは未定義のエラーになる）。
+- 構文チェックは `matcha-check --shared-labels A.matcha B.matcha` で行う（単独で検査すると、別ファイルのラベルは未定義のエラーになる）。
 
 ## 5. コマンド
 
@@ -123,14 +123,14 @@ Matcha には import がないので、一つの理論を複数のファイル�
 
 
 ```
-mext.py init    X.matcha [Y.matcha …] [-o X.mext] [--solve]
+mext init       X.matcha [Y.matcha …] [-o X.mext] [--solve]
                                     # ひな形 X.mext を作る。複数のファイルは一つの理論にまとめる（--solve で求解も行う）
-mext.py solve   X.mext [--no-review]
-mext.py verify  X.mext [--skeptical] # [claimed] を検証（既定は信憑的: いずれかの Extension で成り立つ。
+mext solve      X.mext [--no-review]
+mext verify     X.mext [--skeptical] # [claimed] を検証（既定は信憑的: いずれかの Extension で成り立つ。
                                     #   --skeptical: すべての Extension で成り立つ）
-mext.py report  X.mext              # Markdown の表
-mext.py explain X.mext E1 "文言"     # 導出のすべての根拠。含まれない場合は含まれない理由（否定は ¬文言）
-mext.py lean    X.mext              # 各 Extension が Γ(E)=E を満たすことの Lean 証明
+mext report     X.mext              # Markdown の表
+mext explain    X.mext E1 "文言"     # 導出のすべての根拠。含まれない場合は含まれない理由（否定は ¬文言）
+mext lean       X.mext              # 各 Extension が Γ(E)=E を満たすことの Lean 証明
 ```
 
 分析のコマンド（0.3.0 以降。いずれも決定論的）:
@@ -245,8 +245,8 @@ match "@A の評価" "@B の評価"             ; 前提どうしも対応づけ
 
 Lean 出力は、Γ を Lean の関数として定義し、`decide +kernel` で `isExtension T E = true` を示す。
 
-- `--import-spec` を付けると、検査器を自前で定義せずに `WallersteinTheory/MextSpec.lean` を import する。そのうえで、健全性定理 `Mext.isExtension_sound` によって `Mext.ReiterExtension T E` まで示す。
+- `--import-spec` を付けると、検査器を自前で定義せずに `lean/MextSpec.lean` を import する。そのうえで、健全性定理 `Mext.isExtension_sound` によって `Mext.ReiterExtension T E` まで示す。
   - `ReiterExtension T E` は、E が無矛盾で、W を含み、規則と「正当化が E と無矛盾なデフォルト」とで閉じた集合のうち最小である、という Reiter の定義である。
   - 健全性定理は、反復回数（規則の数 + デフォルトの数 + 1）で Γ の不動点に達することの証明を含む。
   - 依存する公理は Lean の標準の 3 つ（propext、Classical.choice、Quot.sound）だけである。
-- これで示せるのは、列挙された各集合が Extension であること（健全性）である。列挙が漏れなくなされていること（完全性）は、`mext.py` のアルゴリズムに依存する。
+- これで示せるのは、列挙された各集合が Extension であること（健全性）である。列挙が漏れなくなされていること（完全性）は、`mext` のアルゴリズムに依存する。

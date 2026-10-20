@@ -396,6 +396,30 @@ for _ in range(300):
 check(f'preferred: 貪欲な判定が、順序をすべて試す判定と一致する（{n_checked} 個の Extension、うち preferred でないもの {n_false} 個）',
       bad == 0 and n_false > 0, str(bad))
 
+# --- 補った要件（あてはめのない関門）を外す候補
+d = tempfile.mkdtemp()
+try:
+    with open(os.path.join(d, 'hurdle.matcha'), 'w', encoding='utf-8') as fh:
+        fh.write("""#類推 <= 本件: (
+    %似ている <= 二つは似ている@類推の基礎になる
+    %対応の具体的な根拠
+) >> 類推が成り立つ as 類推
+""")
+    with contextlib.redirect_stdout(io.StringIO()):
+        core.main(['init', os.path.join(d, 'hurdle.matcha')])
+    mp = os.path.join(d, 'hurdle.mext')
+    txt = open(mp, encoding='utf-8').read().replace('[ai]\n', '[ai]\nsupplied "対応の具体的な根拠" ; 類推に要ると判断した要件\n', 1)
+    open(mp, 'w', encoding='utf-8').write(txt)
+    mf, th, _ = analysis.load(mp)
+    res = analysis.sensitivity(th)
+    sr = [c for c in res['cands'] if c.kind == 'supplied-req']
+    md = analysis.summary_md(th, mf, mp)
+    check('sensitivity: あてはめのない補った要件を、満たすとみなす候補にする', len(sr) == 1 and sr[0].supplied
+          and any(cid == sr[0].id for cid, _ in res['appear']) and not getattr(th, 'supplied_unresolved', []), str([(c.id, c.kind) for c in res['cands']]))
+    check('summary: 補った要件のために成り立たない結論を示す', '書き起こした者が補った要件' in md, md[:1500])
+finally:
+    shutil.rmtree(d)
+
 # --- compare（読みの比較）
 from mext import compare
 cf = compare.CompareFile(os.path.join(TC, 'views.compare')).load()

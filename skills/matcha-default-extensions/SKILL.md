@@ -35,7 +35,7 @@ description: Matcha / Matcha-D（法的推論の形式言語 Matcha に例外記
    python3 -m mext connectives X.mext -o X.connectives.md
    python3 -m mext verify X.mext && python3 -m mext verify --skeptical X.mext
    python3 -m mext explain X.mext E1 "主要な結論"    # 否定は ¬ を前に付ける
-   python3 -m mext lean X.mext                      # lean があれば lean X.lean で確かめる
+   python3 -m mext lean X.mext                      # lean があれば lean X.lean で確かめる。しなければ、そのことと理由をレポートに書く
    ```
 
    `reject` があれば、審査を反映しない版 `X.asis.mext`（`cp` してから `solve --no-review`）と比べる。誤記の訂正や抗弁の立証などは試算 `X.alt-*.mext` で。

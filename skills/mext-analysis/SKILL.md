@@ -25,7 +25,7 @@ description: 「mext分析」。任意の文書（法律の文書に限らない
 
 ## 手順
 
-1. **長さを決める**: 文書が 2,000 字未満なら「要点」（レポートが原文より何倍も長くならないように）。5,000 字未満で主な結論が 3 つ以下なら「標準」。それより大きければ、聞けるなら「要点・標準・詳細」を聞く（聞けなければ「標準」にし、そう書く）。
+1. **長さを決める**: 文書が 2,000 字未満なら「要点」（レポートが原文より何倍も長くならないように）。5,000 字未満で主な結論が 3 つ以下なら「標準」。それより大きければ、聞けるなら「要点・標準・詳細」を聞く（聞けなければ「標準」にし、そう書く）。「要点」では、作るファイルも絞る（試算と explain は §0 の所見を支えるものだけにする）。
 2. **既存の書き起こしを確かめる**: `X.matcha` がすでにあれば、`references/existing_transcriptions.md` に従う（人が直していたら、その版を正として原文から組み立て直す。上書きしない）。
 3. **matcha分析**: `../matcha-analysis/SKILL.md` に従い、`X.matcha` とメモ `X.matcha.md` を作る（事前の予測、lint による磨き上げを含む）。
 4. **MEXT**:
@@ -40,7 +40,7 @@ description: 「mext分析」。任意の文書（法律の文書に限らない
    python3 -m mext sensitivity X.mext -o X.sensitivity.md
    python3 -m mext connectives X.mext -o X.connectives.md
    python3 -m mext verify X.mext && python3 -m mext verify --skeptical X.mext
-   python3 -m mext lean X.mext        # 任意
+   python3 -m mext lean X.mext        # 任意。lean があれば lean X.lean で検査する。しない場合（lean がない、時間がかかりすぎる）は、そのことと理由をレポートに書く
    ```
 
 5. **原文に戻る**: summary の争点、結論を左右する結び方（読み・未記録）、補った前提に依存する結論、「独立した経路」（`concern` / `distinct` を判断する）について、原文を読み直す。判断が変われば `[ai]` を書き換え（注は `; 審査で改めた: …`）、解き直す。書き起こしの誤りに気づいたら、`snapshot` → 修正 → `solve` → `diff` で直し、メモの改訂の記録に書く（**結論のための書き直しはしない**）。試算は `X.alt-*.mext` に作る。

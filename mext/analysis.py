@@ -33,12 +33,12 @@ def load(path):
     return mf, th, diags
 
 
-def variant(th, drop_defaults=(), drop_facts=()):
-    """前提を外した理論（規則と原子はそのまま）"""
+def variant(th, drop_defaults=(), drop_facts=(), add_facts=()):
+    """前提を外した理論（規則と原子はそのまま）。add_facts は満たすとみなす要件（補った要件を外す試算）"""
     t = copy.copy(th)
     t.defaults = {k: v for k, v in th.defaults.items() if k not in drop_defaults}
     t.priority = {(a, b) for a, b in th.priority if a in t.defaults and b in t.defaults}
-    t.W = [l for l in th.W if l not in drop_facts]
+    t.W = [l for l in th.W if l not in drop_facts] + [l for l in add_facts if l not in th.W]
     t.notes = []
     return t
 
@@ -105,7 +105,8 @@ KIND_JA = _L({'eval': ('評価', 'evaluation'), 'eval-all': ('評価（判断ご
               'eval-one': ('評価（あてはめ一か所）', 'evaluation (one application)'), 'issue': ('論点', 'issue'), 'reason': ('理由', 'reason'),
               'extra': ('追加のデフォルト', 'added default'), 'claim': ('主張', 'claim'), 'fact': ('事実', 'fact'),
               'extra-fact': ('追加の事実', 'added fact'), 'fact-仮定': ('事実（仮定）', 'fact (assumption)'),
-              'fact-著者の主張': ('事実（著者の主張）', "fact (author's claim)")})
+              'fact-著者の主張': ('事実（著者の主張）', "fact (author's claim)"),
+              'supplied-req': ('補った要件（外すと、満たすとみなす）', 'supplied requirement (removing it treats it as met)')})
 
 
 def candidates(th, facts=False):
@@ -143,6 +144,17 @@ def candidates(th, facts=False):
         if a.kind == 'extra' or facts or kind_ai in ('仮定', '著者の主張') or a.text in getattr(th, 'supplied', {}):
             kind = 'extra-fact' if a.kind == 'extra' else ('fact-' + kind_ai if kind_ai else 'fact')
             out.append(Cand(None, kind, ('f', l), th.lit_str(l), th.lit_text(l), a.lines[0] if a.lines else '', kind_ai or ''))
+    # 補った要件のうち、あてはめの評価を持たないもの（書き起こした者が足した関門）は、「満たすとみなす」ことを候補にする。
+    # 外すと新たに成り立つ結論（感度分析の「外すと新たに成り立つ結論」）として効く
+    seen = set()
+    for t in getattr(th, 'supplied', {}):
+        l = core.lit_from_text(th, t)
+        if l is None or l < 0 or th.by_id[l].kind != 'req' or l in seen:
+            continue
+        if any(d.kind == 'eval' and len(d.just) > 1 and abs(d.just[1]) == l for d in th.defaults.values()):
+            continue       # あてはめの評価があれば、その評価に印が付く
+        seen.add(l)
+        out.append(Cand(None, 'supplied-req', ('r', l), th.lit_str(l), th.lit_text(l), th.by_id[l].lines[0] if th.by_id[l].lines else '', ''))
     for i, c in enumerate(out, 1):
         c.id = f'p{i}'
     mark_supplied(th, out)
@@ -174,6 +186,8 @@ def mark_supplied(th, cands):
         if c.kind == 'claim':
             d = th.defaults[c.key[1]]
             names |= {d.name}
+        if c.kind == 'supplied-req':
+            names |= req_names(th, c.key[1])
         for t in sup:
             if t in names:
                 c.supplied = True
@@ -186,7 +200,7 @@ def drop(th, cands):
     atoms = {c.key[1] for c in cands if c.key[0] == 'a'}
     if atoms:
         names += [d.name for d in th.defaults.values() if d.kind == 'eval' and d.concl[0] in atoms]
-    return variant(th, names, [c.key[1] for c in cands if c.key[0] == 'f'])
+    return variant(th, names, [c.key[1] for c in cands if c.key[0] == 'f'], [c.key[1] for c in cands if c.key[0] == 'r'])
 
 
 def default_targets(th, sk):
@@ -557,6 +571,11 @@ def sensitivity_md(th, res, path, full=False):
     if not res['appear']:
         out.append(_t('（なし）', '(none)'))
     for cid, l in res['appear']:
+        if cands[cid].kind == 'supplied-req':
+            out.append(_t('- {i} を外す（補った要件 {x} を満たすとみなす）と{c}が成り立つ（成り立たないのは、書き起こした者が足した要件による）',
+                          '- removing {i} (treating the supplied requirement {x} as met) makes {c} hold (it fails only because of a requirement the transcriber added)',
+                          i=cid, c=Q(th.lit_text(l)), x=Q(cands[cid].text)))
+            continue
         out.append(_t('- {i} を外すと{c}が成り立つ（{x} が、それを打ち消していた）', '- removing {i} makes {c} hold ({x} was blocking it)',
                       i=cid, c=Q(th.lit_text(l)), x=cands[cid].text))
     shared = [f'- {c.id}' + (' ' if _en() else '') + f'{Q(c.text)}'
@@ -918,6 +937,10 @@ def summary_md(th, mf, path):
                             'Check whether the source prefers one side (if so, write :: priority; if it leaves the question open, that is the state of its argument). '
                             'The decisive column lists premises whose removal leaves no preferred Extension containing it (dependencies within that reading)',
                             a=', '.join(ins), b=', '.join(outs)))
+        elif st0 != 'holds' and [cid for cid, x in res.get('appear', []) if x == l and cands[cid].kind == 'supplied-req']:
+            sr = [cid for cid, x in res['appear'] if x == l and cands[cid].kind == 'supplied-req']
+            notes.append(_t('**書き起こした者が補った要件（{i}）のために成り立たない**。それを満たすとみなすと成り立つ',
+                            '**fails only because of a requirement supplied by the transcriber ({i})**; treating it as met makes it hold', i=', '.join(sr)))
         elif st0 != 'holds':
             notes.append(_t('成り立たない理由（要件の不足、例外による阻却、対立する主張など）は mext explain でたどれる',
                             'mext explain shows why it does not hold (missing requirements, defeat by an exception, an opposing claim, etc.)'))
