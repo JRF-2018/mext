@@ -110,12 +110,43 @@ def candidates(th, facts=False):
     for l in th.W:
         a = th.by_id[abs(l)]
         kind_ai = fk.get(a.text, (None,))[0]
-        if a.kind == 'extra' or facts or kind_ai in ('仮定', '著者の主張'):
+        if a.kind == 'extra' or facts or kind_ai in ('仮定', '著者の主張') or a.text in getattr(th, 'supplied', {}):
             kind = 'extra-fact' if a.kind == 'extra' else ('fact-' + kind_ai if kind_ai else 'fact')
             out.append(Cand(None, kind, ('f', l), th.lit_str(l), th.lit_text(l), a.lines[0] if a.lines else '', kind_ai or ''))
     for i, c in enumerate(out, 1):
         c.id = f'p{i}'
+    mark_supplied(th, out)
     return out
+
+
+def req_names(th, l):
+    """要件の原子の文言と、その素の名前（「主張／%要件」の %要件・要件）"""
+    t = th.by_id[abs(l)].text
+    tail = t.split('／', 1)[-1]
+    return {t, tail, tail.lstrip('%'), tail.strip('「」')}
+
+
+def mark_supplied(th, cands):
+    """[ai] の supplied（書き起こした者が補った前提）を候補に印として付ける。評価・主張・事実の文言、ラベル、
+    または要件の文言（その要件へのあてはめの評価に印を付ける）で書ける。当たらなかった文言は th.supplied_unresolved に"""
+    sup = getattr(th, 'supplied', {})
+    hit = set()
+    for c in cands:
+        c.supplied = False
+        names = {c.text, str(c.label), c.id}
+        if c.kind.startswith('eval'):
+            d = th.defaults[c.key[1]] if c.key[0] == 'd' else next(x for x in th.defaults.values()
+                                                                    if x.kind == 'eval' and x.concl[0] == c.key[1])
+            if len(d.just) > 1:
+                names |= req_names(th, d.just[1])
+        if c.kind == 'claim':
+            d = th.defaults[c.key[1]]
+            names |= {d.name}
+        for t in sup:
+            if t in names:
+                c.supplied = True
+                hit.add(t)
+    th.supplied_unresolved = [t for t in sup if t not in hit]
 
 
 def drop(th, cands):
@@ -362,9 +393,10 @@ def sensitivity_md(th, res, path):
            '外すのは下の候補だけで、W の事実と規則はそのまま。「成り立つ」は、すべての preferred Extension に含まれること）', '',
            f'基準の理論: Extension {res["n_ext"]} 個（preferred {res["n_pref"]} 個）。候補 {len(cands)} 個。全候補で組の大きさ {res["size"]} まで調べた'
            + ('（依存が見つからない結論は、支持の組を集めて、そのすべてと交わる組を大きさ 4 まで調べた）' if res.get('auto') else '') + '。「—」は、調べた範囲で見つからなかったことを表し、より大きな組で効く可能性は残る。', '',
-           '## 候補の前提', '', '| ID | 種類 | 名前 | 内容 | 行 | AI の審査 |', '|---|---|---|---|---|---|']
+           '## 候補の前提', '', '| ID | 種類 | 名前 | 内容 | 行 | AI の審査 | 補った前提 |', '|---|---|---|---|---|---|---|']
     for c in res['cands']:
-        out.append(f'| {c.id} | {KIND_JA.get(c.kind, c.kind)} | {esc(str(c.label))} | {esc(c.text)} | {c.line} | {c.review} |')
+        out.append(f'| {c.id} | {KIND_JA.get(c.kind, c.kind)} | {esc(str(c.label))} | {esc(c.text)} | {c.line} | {c.review} | '
+                   + ('**補った**' if getattr(c, 'supplied', False) else '') + ' |')
     out += ['', '## 結論ごとの依存', '',
             '| 結論 | 基準 | 単独で外すと成り立たなくなる | 組で外すと成り立たなくなる（極小の組） | 外すと否定が成り立つ | 極小の支持の組（一例） | 調べた範囲 |',
             '|---|---|---|---|---|---|---|']
@@ -427,6 +459,10 @@ def sensitivity_md(th, res, path):
         out += [f'- {", ".join(d["ids"])}: {d["note"]}' for d in res['distincts']]
     if res.get('unresolved'):
         out += ['', '**[ai] の concern / distinct で、候補に当たらなかった文言**: ' + '、'.join(f'「{m}」' for m in res['unresolved'])]
+    shared_unres = getattr(th, 'supplied_unresolved', None) or []
+    if shared_unres:
+        out += ['', '**[ai] の supplied で、候補に当たらなかった文言**（評価・主張・事実・要件の文言で書く）: '
+                + '、'.join(f'「{m}」' for m in shared_unres)]
     out += ['', '## 外すと新たに成り立つ結論（非単調性）', '']
     if not res['appear']:
         out.append('（なし）')
@@ -435,7 +471,10 @@ def sensitivity_md(th, res, path):
     shared = [f'- {c.id}「{c.text}」（あてはめ {len(sib)} か所: {", ".join(x.id for x in sib)}）: '
               f'あてはめを一か所ずつ外しても ' + '、'.join(f'「{th.lit_text(l)}」' for l in keep)
               + ' は残るが、判断ごと外すと成り立たなくなる。この判断が複数の経路に共通する弱点である'
+              + ('。**これは書き起こした者が補った前提である**（原文にない。別の読みでは、この共通の弱点は現れない可能性がある）'
+                 if any(getattr(x, 'supplied', False) for x in [c] + sib) else '')
               for c, sib, keep in shared_judgments(res)]
+
     if shared:
         out += ['', '## 複数の経路に共通する判断', ''] + shared
     if any(c.kind == 'eval-all' for c in res['cands']):
@@ -660,6 +699,8 @@ def short(c, n=36):
     t = c.text.rsplit('@', 1)[1] if c.kind.startswith('eval') and '@' in c.text else c.text
     t = t if len(t) <= n else t[:n - 1] + '…'
     mark = '〔doubtful〕' if c.review == 'doubtful' else ('〔未審査〕' if c.kind.startswith('eval') and not c.review else '')
+    if getattr(c, 'supplied', False):
+        mark += '〔補った前提〕'
     return f'{c.id}「{t}」{mark}'
 
 
@@ -713,6 +754,9 @@ def summary_md(th, mf, path):
                              if not p['support'] else f'調べた範囲（{p["explored"]}）では見つからない')
             if any(c.review == 'doubtful' for c in singles):
                 notes.append('doubtful の評価に依存')
+            if any(getattr(c, 'supplied', False) for c in singles):
+                notes.insert(0, '**原文にない前提（書き起こした者が補ったもの）に依存する**: '
+                             + ', '.join(c.id for c in singles if getattr(c, 'supplied', False)))
             for x in p['singles']:
                 if cands[x].kind.startswith('eval') and cands[x].review in ('doubtful', ''):
                     contested.setdefault(x, {'1': [], 'g': []})['1'].append(l)
@@ -758,8 +802,10 @@ def summary_md(th, mf, path):
     if sj:
         out += ['', '## 複数の経路に共通する判断', '']
         for c, sib, keep in sj:
+            sup = any(getattr(x, 'supplied', False) for x in [c] + sib)
             out.append(f'- {short(c, 50)}（あてはめ {len(sib)} か所）: 一か所ずつ外しても {names(keep)} は残るが、'
-                       '判断ごと外すと成り立たなくなる')
+                       '判断ごと外すと成り立たなくなる'
+                       + ('。**書き起こした者が補った前提である**（別の読みでは、この共通の弱点は現れない可能性がある）' if sup else ''))
     # 導出のたどり方（最終的な結論ごとに、それを含む preferred Extension で explain する）
     cmds = []
     for l in shown[:6]:
@@ -776,6 +822,8 @@ def summary_md(th, mf, path):
                        + (names(lost) + ' が成り立たなくなる' if lost else 'はどれも成り立ったまま'))
     if res.get('unresolved'):
         out.append('\n**[ai] の concern / distinct で、候補に当たらなかった文言**: ' + '、'.join(f'「{m}」' for m in res['unresolved']))
+    if getattr(th, 'supplied_unresolved', None):
+        out.append('\n**[ai] の supplied で、候補に当たらなかった文言**: ' + '、'.join(f'「{m}」' for m in th.supplied_unresolved))
     return '\n'.join(out)
 
 

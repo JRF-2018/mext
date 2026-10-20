@@ -146,6 +146,7 @@ class AIDirectives:
         self.distincts = [] # ([前提の文言], 注)。内容の上で互いに独立だと AI が判断した前提の組
         self.connectives = {}  # 対象（主張のラベル・要件の文言・L行番号）-> (明示|読み, 注)。結び方（AND/OR）が原文に明示されているか
         self.fact_kinds = {}   # 事実の文言 -> (記述|仮定|確認済み|著者の主張, 注)
+        self.supplied = {}     # 前提の文言 -> 注。原文になく、書き起こした者が補った前提
         self.extra = []     # (種類, 内容, 注)
         self.raw = []       # 元の行（書き戻し用）
 
@@ -187,6 +188,9 @@ def parse_ai_line(line, ai, lineno, errs):
             ai.concerns[words[1]] = (words[2:], note)
         elif cmd == 'distinct' and len(words) >= 3 and all(quoted[1:]):
             ai.distincts.append((words[1:], note))
+        elif cmd == 'supplied' and len(words) >= 2 and all(quoted[1:]):
+            for w in words[1:]:
+                ai.supplied[w] = note
         elif cmd == 'connective' and len(words) == 3 and words[2] in ('明示', '読み'):
             ai.connectives[words[1]] = (words[2], note)
         elif cmd == 'fact-kind' and len(words) == 3 and words[2] in FACT_KINDS:
@@ -861,7 +865,7 @@ def scope(th, exts, pref):
     wf = [th.by_id[abs(l)].text for l in th.W if th.by_id[abs(l)].text not in targets]
     facts = {k: sum(1 for t in wf if fk.get(t, (None,))[0] == k) for k in FACT_KINDS}
     facts['未分類'] = sum(1 for t in wf if t not in fk)
-    return {'facts_total': len(wf), 'facts': facts,
+    return {'facts_total': len(wf), 'facts': facts, 'supplied': len(getattr(th, 'supplied', {})),
             'evals': len(st), 'unreviewed': sum(1 for x in st if x is None), 'ok': st.count('ok'),
             'doubtful': st.count('doubtful'), 'reject': st.count('reject'),
             'finals': finals, 'finals_hold': [l for l in finals if sk and l in sk],
@@ -875,6 +879,8 @@ def scope_text(th, sc):
     if sc.get('facts_total') and sc['facts']['未分類'] < sc['facts_total']:
         t += (f'W の事実 {sc["facts_total"]} 個（' + '・'.join(f'{k} {v}' for k, v in sc['facts'].items() if v)
               + '。種別は AI の判断。仮定と著者の主張は感度分析で外す候補にする）。')
+    if sc.get('supplied'):
+        t += f'書き起こした者が補った前提 {sc["supplied"]} 個（[ai] の supplied。原文にない前提）。'
     if sc['finals']:
         t += (f'最終的な結論 {len(sc["finals"])} 個のうち、成り立つもの {len(sc["finals_hold"])} 個、'
               f'理論の中に対立する命題（否定）がないもの {len(sc["unopposed"])} 個')
@@ -1025,6 +1031,7 @@ def build_from_docs(mf, ai, files, docs):
     th.reviews = dict(ai.review)
     th.concerns, th.distincts = dict(ai.concerns), list(ai.distincts)
     th.connectives, th.fact_kinds = dict(ai.connectives), dict(ai.fact_kinds)
+    th.supplied = dict(ai.supplied)
     th.docs, th.files = docs, files      # lint などが構文木を参照するため
     th.ai = ai
     th.name_atoms()
@@ -1163,7 +1170,8 @@ def cmd_init(args):
                 ';   concern 名 "前提" "前提" …    … 内容の上で一つの争点を共有する前提（感度分析でまとめて外す）\n'
                 ';   distinct "前提" "前提" …      … 内容の上で互いに独立な前提\n'
                 ';   connective "主張のラベルか要件の文言" 明示|読み … 結び方（AND/OR）が原文に明示されているか\n'
-                ';   fact-kind "事実" 記述|仮定|確認済み|著者の主張 … W の事実の種別\n\n'
+                ';   fact-kind "事実" 記述|仮定|確認済み|著者の主張 … W の事実の種別\n'
+                ';   supplied "前提" …              … 原文になく、書き起こした者が補った前提\n\n'
                 '[extra]\n'
                 ';   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2\n\n'
                 '[claimed]\n'

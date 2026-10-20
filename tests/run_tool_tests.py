@@ -104,6 +104,24 @@ check('sensitivity: あてはめ一か所ずつ外しても結論は残る', 'ev
 md = analysis.sensitivity_md(th, res, 'shared_eval.mext')
 check('sensitivity: 判断ごとと一か所ずつの違いを言葉で示す', '一か所ずつ外しても' in md and '複数の経路に共通する弱点' in md)
 
+# supplied（補った前提。写しで試す）
+d = tempfile.mkdtemp()
+try:
+    shutil.copy(os.path.join(TC, 'shared_eval.matcha'), d)
+    txt = open(os.path.join(TC, 'shared_eval.mext'), encoding='utf-8').read().replace(
+        '[ai]\n', '[ai]\nsupplied "便益がある@便益は義務の理由になる" "存在しない前提"  ; 試験\n', 1)
+    f = os.path.join(d, 'shared_eval.mext')
+    open(f, 'w', encoding='utf-8').write(txt)
+    mf, th, _ = analysis.load(f)
+    md = analysis.summary_md(th, mf, f)
+    check('supplied: 結論の決め手が補った前提なら summary で知らせる', '原文にない前提（書き起こした者が補ったもの）に依存する' in md, md[:300])
+    check('supplied: 複数の経路に共通する判断が補った前提なら、そう書く', '書き起こした者が補った前提である' in md)
+    check('supplied: 当たらなかった文言を知らせる', '「存在しない前提」' in md)
+    exts, pref, _ = core.solve(th)
+    check('supplied: 検証の範囲に補った前提の数を出す', '補った前提 2 個' in core.scope_text(th, core.scope(th, exts, pref)))
+finally:
+    shutil.rmtree(d)
+
 # --- 検証の範囲
 th = theory(os.path.join(TC, 'three_paths.mext'))
 exts, pref, _ = core.solve(th)
