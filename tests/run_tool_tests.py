@@ -206,6 +206,7 @@ try:
         'diff': analysis.diff_md(ef, ef, th, th, mf, mf, ('concl', 'claim')),
         'lint': ' '.join(m for _, _, _, m in analysis.lint(th, mf, exts, pref)),
         'audit': ' '.join(f'{i} {m}' for _, i, m in analysis.audit(ef)),
+        'lean': core.lean_source(th, exts, 'English', 'english.mext') + core.lean_source(th, exts, 'English', 'english.mext', import_spec='MextSpec'),
         'checker': ' '.join(d.msg for d in matcha_check.check_text(open(os.path.join(HERE, 'corpus_neg', 'english_as.matcha'), encoding='utf-8').read())[1]),
     }
     for k, v in texts.items():
@@ -221,6 +222,12 @@ items = analysis.lint(th, mf, exts, pref)
 kinds = [x[2] for x in items]
 for k in ('同語反復の評価', '結論の文言の書き写し', '立証の手段のない要件', '行き止まりの主張'):
     check(f'lint: {k}', k in kinds, str(kinds))
+mf, th, _ = analysis.load(os.path.join(TC, 'report_views.mext'))
+exts, pref, _ = core.solve(th)
+check('lint: 報告型の結論（対立が一つもない）', '報告型の結論' in [x[2] for x in analysis.lint(th, mf, exts, pref)])
+mf, th, _ = analysis.load(os.path.join(EX, 'analysis', 'kindness_essay', 'kindness_essay.mext'))
+exts, pref, _ = core.solve(th)
+check('lint: $ラベルで受けて評価する報告は数えない', '報告型の結論' not in [x[2] for x in analysis.lint(th, mf, exts, pref)])
 mf, th, _ = analysis.load(os.path.join(EX, 'theft.mext'))
 exts, pref, _ = core.solve(th)
 check('lint: 原典の窃盗罪の例には警告がない', not [x for x in analysis.lint(th, mf, exts, pref) if x[0] == '警告'])
@@ -245,6 +252,62 @@ try:
     check('snapshot: 版のファイルを作り theory: を書き換える', ok)
 finally:
     shutil.rmtree(d)
+
+# --- "要件"（英文のための「要件」の別表記）と、.mext の文字列（'…' と \"）
+mf, th, _ = analysis.load(os.path.join(TC, 'ascii_quote.mext'))
+exts, pref, conflicting = core.solve(th)
+check('"要件": 要件の原子の文言に "" が残る', 'taking／"public use"' in th.atoms, str(list(th.atoms)[:6]))
+check("[ai]: '…' で書いた review が効く", th.reviews.get('the stadium is open to everyone@a public use', ('',))[0] == 'ok')
+check('[ai]: 注の中のアポストロフィで行が壊れない', th.reviews.get('a single developer profits@mainly private', ('',))[0] == 'doubtful')
+gen = core.render_generated(th, exts, pref, conflicting, [])
+check("[atoms]: \" を含む文言は '…' で書く", """'taking／"public use"'""" in gen)
+check('文字列: \\" のエスケープと \'…\' が同じ文言になる',
+      core.lit_from_text(th, '"taking／\\"public use\\""') == core.lit_from_text(th, """'taking／"public use"'""") is not None)
+check('文字列: qs と QRE が往復する', all(core.unq(core.QRE.fullmatch(core.qs(x))) == x
+                                          for x in ('a"b', "a'b", 'a"b\'c', 'a\\b', 'plain')))
+with contextlib.redirect_stdout(io.StringIO()) as buf:
+    core.cmd_verify(type('A', (), {'file': os.path.join(TC, 'ascii_quote.mext'), 'skeptical': False})())
+check('[claimed]: \'…\' で書いた予測を検証できる', 'OK' in buf.getvalue(), buf.getvalue())
+
+# --- compare（読みの比較）
+from mext import compare
+cf = compare.CompareFile(os.path.join(TC, 'views.compare')).load()
+A, B = compare.Reading(cf.a), compare.Reading(cf.b)
+md = compare.compare_md(A, B, cf, 'views.compare')
+check('compare: ラベルで指した主張は、その結論どうしを比べる', '| 1 | 至善の神観では出生の差を自由選択の結果として説明する〔神〕 | 神は一人一人に最良の結果をもたらそうと努める〔神〕 |' in md, md[:600])
+check('compare: 成否の違いを示す', '対応 2 組のうち、成否が違うもの 2 組' in md and 'B では preferred Extension が分かれる' in md)
+check('compare: 対応のない最終的な結論を示す', 'A だけ（1 個）: 「二つの神観のどちらかでなければ矛盾するという著者の判断がある〔著者〕」' in md)
+check('compare: 解決できない [match] の行を示す', '「@x」 / 「@y」: A に見当たらない、B に見当たらない' in md)
+cf2 = compare.CompareFile(os.path.join(TC, 'views.compare')).load()
+cf2.matches = []
+A2 = compare.Reading(os.path.join(TC, 'shared_eval.mext'))
+B2 = compare.Reading(os.path.join(TC, 'shared_eval.mext'))
+md = compare.compare_md(A2, B2, None)
+check('compare: 同じ読みどうしは、文言で自動に対応し、違いがない', '成否が違うもの 0 組' in md and '**成否が違う**' not in md
+      and 'A だけ（0 個）' in md, md[-800:])
+d = tempfile.mkdtemp()
+try:
+    out = os.path.join(d, 'x.compare')
+    with contextlib.redirect_stdout(io.StringIO()):
+        compare.template(compare.Reading(os.path.join(TC, 'report_views.mext')), compare.Reading(os.path.join(TC, 'claim_views.mext')), out)
+    txt = open(out, encoding='utf-8').read()
+    check('compare --init: ひな形に a: b: と対応のない結論を書く', 'a: ' in txt and '[match]' in txt and '"二つの神観のどちらかでなければ矛盾するという著者の判断がある〔著者〕"' in txt)
+    cf3 = compare.CompareFile(out).load()
+    check('compare --init: ひな形はそのまま読める', not cf3.errs and os.path.exists(cf3.a), str(cf3.errs))
+finally:
+    shutil.rmtree(d)
+i18n.set_lang('en')
+try:
+    d = tempfile.mkdtemp()
+    out = os.path.join(d, 'en.compare')
+    compare.template(compare.Reading(os.path.join(TC, 'english.mext')), compare.Reading(os.path.join(TC, 'english.mext')), out)
+    md = compare.compare_md(compare.Reading(os.path.join(TC, 'english.mext')), compare.Reading(os.path.join(TC, 'english.mext')),
+                            compare.CompareFile(out).load(), out) + open(out, encoding='utf-8').read()
+    shutil.rmtree(d)
+    bad = [m.group(0) for m in JP.finditer(md)]
+    check('English output: compare に日本語が残らない', not bad, ''.join(bad)[:40])
+finally:
+    i18n.set_lang('ja')
 
 print(f'失敗 {fail} 件')
 sys.exit(1 if fail else 0)

@@ -12,6 +12,7 @@ import copy
 import itertools
 import os
 import re
+import shlex
 import shutil
 
 try:
@@ -774,7 +775,7 @@ def trial_files(path, text):
             mf = core.MextFile(f).load()
         except Exception:      # noqa: BLE001
             continue
-        if any(text in ln and core.split_note(ln)[0].strip() not in own for _, ln in mf.ai_lines + mf.extra_lines):
+        if any(core.mentions(ln, text) and core.split_note(ln)[0].strip() not in own for _, ln in mf.ai_lines + mf.extra_lines):
             out.append(os.path.basename(f))
     return out
 
@@ -866,6 +867,14 @@ def summary_md(th, mf, path):
                     contested.setdefault(x, {'1': [], 'g': []})['g'].append(l)
         if st0 == 'holds' and not core.opposed(th, l):
             notes.append(_t('反対の根拠が理論にない', 'no counter-argument in the theory'))
+        elif st0 == 'credulous':
+            ins = [f'E{i}' for i, (E, pp) in enumerate(zip(exts, pref), 1) if pp and E != INCONSISTENT and l in E]
+            outs = [f'E{i}' for i, (E, pp) in enumerate(zip(exts, pref), 1) if pp and E != INCONSISTENT and l not in E]
+            notes.append(_t('preferred Extension が分かれている（{a} では成り立ち、{b} では成り立たない）。対立する主張のあいだで優先が決まらない。'
+                            '原文がどちらかを優先しているかを確かめる（優先していれば :: 優先 で書く。決着をつけていなければ、それが原文の論証の状態である）',
+                            'the preferred Extensions split (it holds in {a} but not in {b}): no priority settles the conflicting claims. '
+                            'Check whether the source prefers one side (if so, write :: priority; if it leaves the question open, that is the state of its argument)',
+                            a=', '.join(ins), b=', '.join(outs)))
         elif st0 != 'holds':
             notes.append(_t('成り立たない理由（要件の不足、例外による阻却、対立する主張など）は mext explain でたどれる',
                             'mext explain shows why it does not hold (missing requirements, defeat by an exception, an opposing claim, etc.)'))
@@ -892,7 +901,7 @@ def summary_md(th, mf, path):
         sn = source_note(th, c.line)
         if sn:
             nav.append(sn)
-        ai_ln = [i for i, ln in mf.ai_lines if c.text in ln]
+        ai_ln = [i for i, ln in mf.ai_lines if core.mentions(ln, c.text)]
         if ai_ln:
             nav.append(_t('[ai] {n} 行目', '[ai] line {n}', n=ai_ln[0]))
         tf = trial_files(path, c.text)
@@ -917,7 +926,9 @@ def summary_md(th, mf, path):
     for l in shown[:6]:
         idx = [i for i, (E, p) in enumerate(zip(exts, pref), 1) if p and E != INCONSISTENT and l in E]
         if idx:
-            cmds.append(f'python3 -m mext explain {os.path.basename(path)} E{idx[0]} "{th.lit_text(l)}"')
+            t = th.lit_text(l)
+            t = shlex.quote(t) if re.search(r'["$`\\!]', t) else f'"{t}"'
+            cmds.append(f'python3 -m mext explain {os.path.basename(path)} E{idx[0]} {t}')
     if cmds:
         out += ['', _t('## 導出をたどる', '## Tracing derivations'), '', '```'] + cmds + ['```']
     if res.get('concerns'):
@@ -983,11 +994,17 @@ def evals_in(n):
     return [x for x in walk(n) if x.kind in ('fact', 'group') and x.eval]
 
 
+REPORT_RE = re.compile(
+    r'(と|として|を)(説明|判断|解釈|主張|考え|述べ|論じ|指摘|評価)(する|できる|している|した|される|がある|もできる|も可能)'
+    r'|という(判断|見方|考え|解釈|立場|見解|主張)(がある|もある|もできる|をとる|を示す)|(著者|筆者)(は|の判断|の見方)|(解釈|考え|説明)も(でき|可能)'
+    r'|\b(the author|the writer|the essay|the article)\b|\b(argues|claims|contends|suggests|explains) that\b'
+    r'|\bcan be (read|interpreted|explained) as\b', re.I)
 LEVEL = _L({'警告': ('警告', 'warning'), '情報': ('情報', 'note')})
 LINT_NAMES = _L({'同語反復の評価': ('同語反復の評価', 'tautological evaluation'), '結論の文言の書き写し': ('結論の文言の書き写し', 'copied conclusion text'),
                  '立証の手段のない要件': ('立証の手段のない要件', 'requirement with no means of proof'), '事実の中の評価語': ('事実の中の評価語', 'evaluative words in a fact'),
                  '一段の主張が多い': ('一段の主張が多い', 'many one-step claims'), '行き止まりの主張': ('行き止まりの主張', 'dead-end claims'),
-                 'どの Extension にも出ない主張': ('どの Extension にも出ない主張', 'claim in no Extension'), '効いていない判断': ('効いていない判断', 'ineffective judgment'),
+                 'どの Extension にも出ない主張': ('どの Extension にも出ない主張', 'claim in no Extension'),
+                 '報告型の結論': ('報告型の結論', 'reported views as conclusions'), '効いていない判断': ('効いていない判断', 'ineffective judgment'),
                  '構文': ('構文', 'syntax')})
 
 
@@ -1080,6 +1097,23 @@ def lint(th, mf, exts=None, pref=None):
                        '（つながっていなければ、ほかの結論には効かない）',
                        '{n} claims have conclusions used nowhere: {x}. Apart from final conclusions, check whether the source uses them to '
                        'support or qualify a conclusion (unconnected, they affect no other conclusion)', n=len(lonely), x=names)))
+    # 報告型の結論: 「…と説明する」「著者は…と考える」のように、立場を述べたことを結論にした書き起こし。
+    # 報告は互いに両立するので、原文が両立しないとする立場どうしも対立しない（Extension が分かれない）。
+    # 報告を $ラベルで受けて著者が評価している場合（「甲野氏は…と主張している」を前提に使う）は、報告の形が正しいので数えない
+    reported = [(f, n) for f, n in claims if n.conclusion and REPORT_RE.search(n.conclusion['text']) and not (n.label and n.label in refs)]
+    concls = [d.concl[1] for d in th.defaults.values() if d.kind == 'claim' and len(d.concl) > 1]
+    no_opp = bool(concls) and not any(core.opposed(th, c) for c in concls)
+    if len(reported) >= 2 and (no_opp or len(reported) >= 0.3 * len(claims)):
+        names = join(f'{x.label or x.head} ({at(f, x.line)})' for f, x in reported[:6]) + ('…' if len(reported) > 6 else '')
+        out.append((I, _t('全体', 'whole'), '報告型の結論',
+                    _t('主張 {n} 個のうち {k} 個の結論が、立場を述べたことの報告の形である（{x}）。{o}'
+                       '原文がその立場を主張しているなら立場そのものを結論にし、原文が両立しないとする立場どうしは、互いに否定し合う結論（>> not）として書く。'
+                       '報告の形のままだと、報告どうしは両立するので対立が理論に現れない',
+                       '{k} of {n} claims conclude with a report of a view ({x}).{o} If the source asserts the view, make the view itself the '
+                       'conclusion; write views the source holds to be incompatible as conclusions that negate each other (>> not). '
+                       'Reports are compatible with each other, so conflicts do not appear in the theory',
+                       n=len(claims), k=len(reported), x=names,
+                       o=_t('理論の中に、主張の結論と対立する命題が一つもない。', ' No conclusion of a claim has an opposing proposition in the theory.') if no_opp else '')))
     # どの Extension にも出ない主張（著者が ! で不成立とした主張は除く）
     failed = {k for k, m, _, _ in th.marks if m == '!'}
     if exts is not None:

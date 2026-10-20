@@ -56,5 +56,10 @@
   "error": 2,
   "warning": 1,
   "note": "事実の文が「で始まり評価付き"
+ },
+ "tests/corpus_neg/ascii_quote_fact.matcha": {
+  "error": 0,
+  "warning": 1,
+  "note": "事実の文が \"…\" で始まる（英文の引用）"
  }
 }

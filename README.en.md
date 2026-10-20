@@ -6,7 +6,7 @@ Read legal-reasoning code written in **Matcha** as **default logic**: a syntax c
 
 > **Notice**
 > - [Matcha](https://www.elecode.jp/matcha) is a formal language for legal reasoning by Taketsugu Hanafusa (花房孟胤). This repository implements its grammar as read from published examples (there is no official BNF).
-> - The exception notation **Matcha-D (`!>`, `>> not` / `>> !`, `:: 優先` / `:: priority`, and naming claims with `as`) is an unofficial extension, unrelated to Elecode or Mr. Hanafusa.**
+> - The exception notation **Matcha-D (`!>`, `>> not` / `>> !`, `:: 優先` / `:: priority`, naming claims with `as`, and `"requirement"` as an ASCII spelling of 「requirement」) is an unofficial extension, unrelated to Elecode or Mr. Hanafusa.**
 > - Naming with `as`, references with `$`, headings `::` and comments `//` follow examples in Mr. Hanafusa's articles (see [docs/matcha_grammar.md](docs/matcha_grammar.md) §1 and §5, in Japanese).
 
 ## What it does
@@ -28,11 +28,12 @@ document ──(AI: matcha analysis)──▶ .matcha
   - verification of claimed Extensions, and explanations of derivations and of why something does not hold;
   - Lean proofs;
   - analysis commands: sensitivity analysis, connective sensitivity, lint, version diff, summary, audit.
-- **AI part** (the skills `mext-analysis`, `matcha-analysis`, `matcha-default-extensions`):
+- **AI part** (the skills `mext-analysis`, `matcha-analysis`, `matcha-default-extensions`, `mext-compare`):
   - transcribing the argument of a document into Matcha (with a correspondence table, supplied premises, and what was left out);
   - judging identity and negation of propositions, and the type of conclusions;
   - reviewing the substance of "fact@evaluation" applications;
-  - predicting Extensions, and writing the report "is the argument right?".
+  - predicting Extensions, and writing the report "is the argument right?";
+  - matching two readings of the same document and interpreting their differences (comparison of readings).
 
   Every AI judgment is written, with its reason, in the `[ai]` section of the MEXT file, where people can audit it.
 
@@ -46,14 +47,14 @@ pip install git+https://github.com/JRF-2018/mext
 
 This installs the commands `matcha-check` and `mext` (also `python3 -m mext.matcha_check` and `python3 -m mext`).
 
-### Claude Code plugin (three skills)
+### Claude Code plugin (four skills)
 
 ```bash
 claude plugin marketplace add JRF-2018/mext
 claude plugin install mext@jrf-mext
 ```
 
-Alternatively, copy the three directories under `skills/` into `.claude/skills/` or `~/.claude/skills/` (copy all three; `mext-analysis` refers to the other two). The skills call `python3 -m mext`, so install the Python package as well.
+Alternatively, copy the four directories under `skills/` into `.claude/skills/` or `~/.claude/skills/` (copy them all; the skills refer to each other). The skills call `python3 -m mext`, so install the Python package as well.
 
 ### English output
 
@@ -68,11 +69,13 @@ The skill instructions (`SKILL.md`) are written in Japanese, but they tell the A
 | `mext-analysis` (mext analysis) | "Do a mext analysis of this document" | any document → `X.matcha`, `X.mext`, report `X.mext-analysis.md` |
 | `matcha-analysis` (matcha analysis) | "Transcribe this document into Matcha" | any document → `X.matcha`, memo `X.matcha.md` (correspondence table, supplied premises, omissions) |
 | `matcha-default-extensions` | "Check the Extensions of X.matcha" | `.matcha` → `X.mext`, report `X.report.md` |
+| `mext-compare` (comparison of readings) | "Compare these two readings" | `A.mext` and `B.mext` of the same document → comparison file `A.vs.B.compare`, report `A.vs.B.compare.md` |
 
 - A **mext analysis** transcribes the argument into Matcha, computes and verifies Extensions, and reports whether the argument (a) follows formally, (b) is substantively convincing, and (c) what it depends on. It works for op-eds, essays and proposals as well as legal documents.
 - Only the mext part is deterministic; transcription and review are AI judgments. So the skills record where each line came from in the source, what the AI supplied and left out, and how it evaluated each step.
 - The skills refine the transcription in response to `lint`: the previous version is kept with `snapshot`, compared with `diff`, and the revision is recorded. Revisions are allowed only to make the transcription more faithful and finer-grained, never to make a conclusion appear or disappear.
 - At the end, `mext audit` lists any gaps in the procedure; the AI fixes them or explains in the report why it cannot.
+- A **comparison of readings** sets two transcriptions of the same document (by different AIs or people) side by side and reports, against the source, where the readings diverge and how that changes the status and dependencies of conclusions. A premise that is decisive in both readings is likely a weakness of the source's argument; a result that appears in only one reading is likely a consequence of a transcription choice.
 
 ### Asking another AI
 
@@ -100,6 +103,8 @@ mext audit X.mext                                 # gaps in the analysis procedu
 mext snapshot X.mext && (edit X.matcha) && mext solve X.mext && mext diff X.v1.mext X.mext
                                                   # semantic differences before and after a revision
 mext changed X.check.mext                         # whether the .matcha or the memo changed since the transcription
+mext compare --init A.mext B.mext -o A.vs.B.compare && (write [match]) && mext compare A.vs.B.compare
+                                                  # two readings of the same document: status, decisive premises, dependencies
 ```
 
 - **sensitivity** removes contestable premises (evaluations, claims, supplied premises, facts marked as assumptions, …) one at a time or in sets, and recomputes. For each conclusion it shows what removing alone defeats it, minimal sets whose removal defeats it (independent paths), what makes its negation hold, and which doubtful evaluations it depends on. When the same evaluation is applied in several places, it distinguishes removing one application from not adopting the judgment at all ("a judgment shared by several paths").
@@ -107,6 +112,7 @@ mext changed X.check.mext                         # whether the .matcha or the m
 - **connectives** flips each AND / OR and shows changes in consequences and dependencies. Rather than demanding a justification for each connective, the AI records whether it is explicit in the source or a reading (`[ai] connective`), and the tool points at readings that decide a conclusion.
 - **concern / distinct** in `[ai]` record whether several paths to the same conclusion share one weakness or are independent grounds; sensitivity and summary use them.
 - **supplied** in `[ai]` records premises not in the source; summary warns when a conclusion depends on them.
+- **compare** sets two readings of the same document side by side. Their atoms are worded differently (possibly in different languages), so an AI or a person writes which conclusions and premises correspond in `[match]` of the comparison file, with reasons; the tool compares each pair: status, decisive premises, shared decisive premises, dependence on supplied premises, connectives, independent paths. Identical texts are matched automatically.
 - **diff** matches atoms by text, not by number, so you can see which conclusions turned, which dependencies changed, and which reviews no longer apply after a revision.
 
 In Claude Code (installed as a plugin, the plugin name is a namespace):
@@ -135,7 +141,9 @@ In Claude Code (installed as a plugin, the plugin name is a namespace):
 :: priority $plan > $objection
 ```
 
-Pitfalls in English text: a line ending in "… as drivers" is read as a label (`as` names an element), and an element starting with 「 is read as a statutory requirement; the syntax checker warns about both. See `skills/matcha-analysis/references/writing_matcha.md` (in Japanese) for how to transcribe documents.
+A statutory requirement (the wording of a statute, 「…」 in Japanese) can be written `"public use"` in Matcha-D, e.g. `"public use" <= the stadium is open to everyone@a public use`. Only at the start of an element is `"` the requirement notation; elsewhere it is ordinary text (`the sign said "closed"` stays a fact). In a `.mext` file, quote a text that contains `"` with `'…'` or write `\"`.
+
+Pitfalls in English text: a line ending in "… as drivers" is read as a label (`as` names an element), and an element starting with `"` or 「 is read as a statutory requirement (if a fact begins with a quotation, use curly quotes “…”); the syntax checker warns about both. See `skills/matcha-analysis/references/writing_matcha.md` (in Japanese) for how to transcribe documents.
 
 ## Lean
 

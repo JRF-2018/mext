@@ -10,6 +10,7 @@ Matcha (https://www.elecode.jp/matcha) は花房孟胤氏による法的推論�
 Matcha-D は本レポートによる最小拡張:
     >> 結論 as ラベル         … 主張（＝デフォルト）に名前を付ける（as は Matcha 既存）
     ... !> $ラベル            … この主張はラベルの主張の「例外」である（例外が勝つ）
+    "要件"                    … 「要件」の別表記（英文のため。要素の先頭に置いたときだけ）
     >> not 結論 / >> !結論    … 結論の古典否定（>> の直後に置いたときだけ演算子。両者は同じ意味）
     :: 優先 $d2 > $d1         … 例外関係とは別に優先順位だけを宣言する注釈行（任意）
 
@@ -49,14 +50,14 @@ OPS1 = ['&', '|', '@', '^', ':']
 STOP2 = set(OPS2)
 STOP1 = set(OPS1)
 
-LABEL_CHARS = r'[^\s<>=~!&|@^:()「」$]+'
+LABEL_CHARS = r'[^\s<>=~!&|@^:()「」"$]+'
 AS_RE = re.compile(r'\s+as\s+(' + LABEL_CHARS + r')\s*(?=$|<=|>>|~>|=>|!>|&|\||@|\^|:|\))')
 AS_LINE_START_RE = re.compile(r'as\s+(' + LABEL_CHARS + r')\s*(?=$|<=|>>|~>|=>|!>|&|\||@|\^|:|\))')
 PRIORITY_RE = re.compile(r'^(?:優先|priority)\s+\$(' + LABEL_CHARS + r')\s*>\s*\$(' + LABEL_CHARS + r')\s*$')   # :: priority は英語の別表記
 
 
 class Tok:
-    __slots__ = ('type', 'value', 'line', 'col', 'indent', 'first', 'extra')
+    __slots__ = ('type', 'value', 'line', 'col', 'indent', 'first', 'extra', 'qchar')
 
     def __init__(self, type_, value, line, col, indent=0, first=False, extra=None):
         self.type = type_      # NL, SECTION, PRIORITY, OP, LPAREN, RPAREN, QUOTE, SIGIL, MARK, REF, AS, NOT, TEXT, EOF
@@ -66,6 +67,7 @@ class Tok:
         self.indent = indent   # NL: その行のインデント幅
         self.first = first     # その行の最初のトークンか
         self.extra = extra     # QUOTE: 」の後の接尾テキスト
+        self.qchar = '「'      # QUOTE: 「」か ""か
 
     def __repr__(self):
         return f'Tok({self.type},{self.value!r},L{self.line}:{self.col})'
@@ -208,14 +210,18 @@ class Lexer:
                 expect_elem = ch in ('&', '|', ':')
                 continue
             # --- 成否の印 + / !
-            if expect_elem and ch in '+!' and i + 1 < n and s[i + 1] in '#%?「$(':
+            if expect_elem and ch in '+!' and i + 1 < n and s[i + 1] in '#%?「"$(':
                 emit('MARK', ch, i)
                 i += 1
                 continue
-            # --- 「要件」（」の後の接尾テキスト「でない」等も拾う）
-            if expect_elem and ch == '「':
+            # --- 「要件」（」の後の接尾テキスト「でない」等も拾う）と "要件"（英文のための別表記。入れ子はない）
+            if expect_elem and ch in '「"':
+                close = '」' if ch == '「' else '"'
                 depth, j = 0, i
-                while j < n:
+                if ch == '"':
+                    j = s.find('"', i + 1)
+                    j = n if j < 0 else j
+                while ch == '「' and j < n:
                     if s[j] == '「':
                         depth += 1
                     elif s[j] == '」':
@@ -224,17 +230,20 @@ class Lexer:
                             break
                     j += 1
                 if j >= n:
-                    self.err(lineno, col0 + i + 1, _t('「 が閉じられていません', '「 is not closed'))
+                    self.err(lineno, col0 + i + 1, _t('{c} が閉じられていません', '{c} is not closed', c=ch))
                     emit('QUOTE', s[i + 1:], i, extra='')
+                    self.toks[-1].qchar = ch
                     return paren_depth
                 inner = s[i + 1:j]
-                if s[j + 1:j + 2] == '「' or s[j + 1:].lstrip()[:1] == '「':
+                nxt = s[j + 1:].lstrip()[:1]
+                if nxt in ('「', '"'):
                     k, suffix = j + 1, ''      # 「A」「B」のように並んだ場合は接尾テキストとしない
                 else:
                     k, suffix = self.read_text(s, j + 1, 0)
                 emit('QUOTE', inner, i, extra=suffix)
+                self.toks[-1].qchar = ch
                 i = k
-                expect_elem = s[k:].lstrip()[:1] == '「'   # 区切りなしで「」が続く場合もトークンを分ける
+                expect_elem = s[k:].lstrip()[:1] in ('「', '"')   # 区切りなしで要件が続く場合もトークンを分ける
                 continue
             # --- 記号 # % ?
             if expect_elem and ch in '#%?':
@@ -303,7 +312,8 @@ class Node:
         self.is_root = is_root
         self.mark = None            # '+' / '!' / None
         self.head = None            # 主張名・要件名・問題提起・事実の文言
-        self.quote = False          # 「」で書かれた要件か
+        self.quote = False          # 「」（または ""）で書かれた要件か
+        self.qchar = '「'           # 「 か "
         self.suffix = None          # 」の後の接尾テキスト
         self.basis = None           # ^根拠
         self.facts = None           # <= 事実
@@ -329,6 +339,8 @@ class Node:
                 d[k] = v
         if self.quote:
             d['quote'] = True
+            if self.qchar == '"':
+                d['quote_char'] = '"'
         if self.conclusion:
             d['conclusion'] = self.conclusion
         if self.excepts:
@@ -462,10 +474,11 @@ class Parser:
                 q = self.p - 1
                 while q > 0 and self.toks[q].line == t.line and self.toks[q].type != 'NL':
                     if self.toks[q].type == 'QUOTE' and self.toks[q - 1].type == 'OP' and self.toks[q - 1].value == '<=':
-                        hint = _t('（<= の後の「…」が、事実ではなく要件「…」と読まれています。事実の文が発言などの引用で始まるなら、'
-                                 '『』に替えてください）',
-                                 ' (the 「…」 after <= is read as a requirement, not a fact. If the fact begins with a quotation, '
-                                 'use 『』 instead)')
+                        qq, alt = ('"…"', '“…”') if self.toks[q].qchar == '"' else ('「…」', '『』')
+                        hint = _t('（<= の後の {q} が、事実ではなく要件と読まれています。事実の文が発言などの引用で始まるなら、'
+                                 '{a}に替えてください）',
+                                 ' (the {q} after <= is read as a requirement, not a fact. If the fact begins with a quotation, '
+                                 'use {a} instead)', q=qq, a=alt)
                         break
                     q -= 1
                 self.err(t, _t('{v} を受け取れる要素が直前にありません{h}', 'no preceding element can take {v}{h}', v=t.value, h=hint))
@@ -538,6 +551,7 @@ class Parser:
             self.adv()
             node = Node('req', t, line_indent, is_root)
             node.quote = True
+            node.qchar = t.qchar
             node.head = t.value
             node.suffix = t.extra or None
             self.take_basis(node)
@@ -798,10 +812,11 @@ def check_semantics(doc, diags):
         if n.facts is not None:
             for x in (n.facts.items if n.facts.kind == 'group' else [n.facts]):
                 if x.kind == 'req' and x.quote:
-                    diags.append(Dn('warning', x, _t('<= の後の「{h}」{s} が、事実ではなく要件と読まれました。'
-                                                    '事実の文が発言などの引用で始まるなら『』に替え、要件なら : でつないでください',
-                                                    '「{h}」{s} after <= is read as a requirement, not a fact. If the fact begins with a '
-                                                    'quotation, use 『』; if it is a requirement, attach it with :', h=x.head, s=x.suffix or '')))
+                    alt = '“…”' if x.qchar == '"' else '『』'
+                    diags.append(Dn('warning', x, _t('<= の後の {q} が、事実ではなく要件と読まれました。'
+                                                    '事実の文が発言などの引用で始まるなら{a}に替え、要件なら : でつないでください',
+                                                    '{q} after <= is read as a requirement, not a fact. If the fact begins with a '
+                                                    'quotation, use {a}; if it is a requirement, attach it with :', q=qtext(x), a=alt)))
         if n.kind == 'fact' and n.label and re.fullmatch(r'[a-z]+', n.label):
             # 英文の行末の「… as drivers」は、ラベル付けとして読まれ、事実の文が切れる
             diags.append(Dn('warning', n, _t('事実「{h}」の後の「as {l}」がラベル付けとして読まれました。'
@@ -845,12 +860,18 @@ def check_semantics(doc, diags):
 # ---------------------------------------------------------------------------
 # 表示
 # ---------------------------------------------------------------------------
+def qtext(n):
+    if n.qchar == '"':
+        return f'"{n.head}"' + (f' {n.suffix}' if n.suffix else '')   # 英文では接尾の語を空白で区切る
+    return f'「{n.head}」{n.suffix or ""}'
+
+
 def fmt_head(n):
     m = n.mark or ''
     if n.kind == 'claim':
         s = f'{m}#{n.head}'
     elif n.kind == 'req':
-        s = f'{m}「{n.head}」{n.suffix or ""}' if n.quote else f'{m}%{n.head}'
+        s = m + (qtext(n) if n.quote else f'%{n.head}')
     elif n.kind == 'issue':
         s = f'{m}? {n.head}'
     elif n.kind == 'ref':

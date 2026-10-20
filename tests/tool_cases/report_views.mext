@@ -1,0 +1,75 @@
+@mext 1
+theory: report_views.matcha
+source: report_views.matcha sha256=d5cb8d26e02862e7
+; MEXT: Matcha EXTension notation。書式は mext の docs/mext.md（スキルでは references/mext.md）を参照。
+
+[ai]
+; AI（または人）の判断。各行の ; 以降に理由を書く。
+;   文言は "…" で囲む（文言に " を含むなら '…' で囲むか、\" と書く）
+;   same "代表の文言" "同じ意味の文言"
+;   neg  "文言A" "文言B"        … B は A の否定
+;   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む
+;   review "事実@評価" ok|doubtful|reject
+;   concern 名 "前提" "前提" …    … 内容の上で一つの争点を共有する前提（感度分析でまとめて外す）
+;   distinct "前提" "前提" …      … 内容の上で互いに独立な前提
+;   connective "主張のラベルか要件の文言" 明示|読み … 結び方（AND/OR）が原文に明示されているか
+;   fact-kind "事実" 記述|仮定|確認済み|著者の主張 … W の事実の種別
+;   supplied "前提" …              … 原文になく、書き起こした者が補った前提
+
+[extra]
+;   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2
+
+[claimed]
+;   E1*: "文言", -"文言"   … 検証したい Extension（* は preferred であることも主張）
+
+; ===== ここから下は mext.py が自動生成（手で直さない） =====
+[atoms]
+k1     claim  "#至善 [至善]"  ; L2
+f1     fact   "神"  ; L2,L6
+r1     req    "至善／%自由選択で説明する"  ; L3
+f2     fact   "至善の神観は出生の差を先祖の自由選択に帰する"  ; L3
+c1     concl  "至善の神観では出生の差を自由選択の結果として説明する〔神〕"  ; L4
+k2     claim  "#暴君 [暴君]"  ; L6
+r2     req    "暴君／%意志で説明する"  ; L7
+f3     fact   "暴君の神観は出生の差を神の意志に帰する"  ; L7
+c2     concl  "暴君の神観では出生の差を神の意志として説明する〔神〕"  ; L8
+k3     claim  "#二者択一 [二者択一]"  ; L10
+f4     fact   "著者"  ; L10
+r3     req    "二者択一／%どちらかでなければ矛盾する"  ; L11
+f5     fact   "二つの神観を混ぜると矛盾が生じる"  ; L11
+c3     concl  "二つの神観のどちらかでなければ矛盾するという著者の判断がある〔著者〕"  ; L12
+
+[W]
+f1, f2, f3, f4, f5
+
+[rules]
+r1: f2 -> r1  ; L3 %自由選択で説明する
+r2: -f2 -> -r1  ; L3 %自由選択で説明する（必要条件の否定）
+r3: -r1 -> -k1  ; L2 要件の否定による主張 至善 の不成立
+r4: f3 -> r2  ; L7 %意志で説明する
+r5: -f3 -> -r2  ; L7 %意志で説明する（必要条件の否定）
+r6: -r2 -> -k2  ; L6 要件の否定による主張 暴君 の不成立
+r7: f5 -> r3  ; L11 %どちらかでなければ矛盾する
+r8: -f5 -> -r3  ; L11 %どちらかでなければ矛盾する（必要条件の否定）
+r9: -r3 -> -k3  ; L10 要件の否定による主張 二者択一 の不成立
+
+[defaults]
+至善: f1, r1 : k1, c1 / k1, c1  ; claim L2 主張
+暴君: f1, r2 : k2, c2 / k2, c2  ; claim L6 主張
+二者択一: f4, r3 : k3, c3 / k3, c3  ; claim L10 主張
+
+[priority]
+
+[extensions]
+; 衝突しうるデフォルト: なし
+E1 preferred:
+  generating: 至善, 暴君, 二者択一
+  literals: k1, f1, r1, f2, c1, k2, r2, f3, c2, k3, f4, r3, f5, c3
+
+[marks]
+
+[summary]
+extensions: 1 (preferred: 1)
+skeptical: k1, c1, k2, c2, k3, c3
+credulous: k1, c1, k2, c2, k3, c3
+; 検証の範囲: 評価 0 個（未審査 0・ok 0・doubtful 0・reject 0。doubtful と未審査の評価も推論を止めない）。最終的な結論 3 個のうち、成り立つもの 3 個、理論の中に対立する命題（否定）がないもの 3 個（これらは、反対の根拠に勝ったのではなく、反対の根拠が書かれていないだけである）。

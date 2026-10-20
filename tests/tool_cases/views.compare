@@ -1,0 +1,8 @@
+@mext-compare 1
+a: report_views.mext
+b: claim_views.mext
+
+[match]
+match "至善" "至善" ; 同じ立場（A は報告、B は主張）
+match '暴君の神観では出生の差を神の意志として説明する' "¬神は一人一人に最良の結果をもたらそうと努める" ; 同じ立場（A は報告、B は主張）
+match "@x" "@y" ; 解決できない行の試験

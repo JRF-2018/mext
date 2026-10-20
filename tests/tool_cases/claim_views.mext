@@ -1,0 +1,68 @@
+@mext 1
+theory: claim_views.matcha
+source: claim_views.matcha sha256=babae026dc003761
+; MEXT: Matcha EXTension notation。書式は mext の docs/mext.md（スキルでは references/mext.md）を参照。
+
+[ai]
+; AI（または人）の判断。各行の ; 以降に理由を書く。
+;   文言は "…" で囲む（文言に " を含むなら '…' で囲むか、\" と書く）
+;   same "代表の文言" "同じ意味の文言"
+;   neg  "文言A" "文言B"        … B は A の否定
+;   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む
+;   review "事実@評価" ok|doubtful|reject
+;   concern 名 "前提" "前提" …    … 内容の上で一つの争点を共有する前提（感度分析でまとめて外す）
+;   distinct "前提" "前提" …      … 内容の上で互いに独立な前提
+;   connective "主張のラベルか要件の文言" 明示|読み … 結び方（AND/OR）が原文に明示されているか
+;   fact-kind "事実" 記述|仮定|確認済み|著者の主張 … W の事実の種別
+;   supplied "前提" …              … 原文になく、書き起こした者が補った前提
+
+[extra]
+;   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2
+
+[claimed]
+;   E1*: "文言", -"文言"   … 検証したい Extension（* は preferred であることも主張）
+
+; ===== ここから下は mext.py が自動生成（手で直さない） =====
+[atoms]
+k1     claim  "#至善 [至善]"  ; L2
+f1     fact   "神"  ; L2,L6
+r1     req    "至善／%自由選択で説明する"  ; L3
+f2     fact   "至善の神観は出生の差を先祖の自由選択に帰する"  ; L3
+c1     concl  "神は一人一人に最良の結果をもたらそうと努める〔神〕"  ; L4,L8
+k2     claim  "#暴君 [暴君]"  ; L6
+r2     req    "暴君／%意志で説明する"  ; L7
+f3     fact   "暴君の神観は出生の差を神の意志に帰する"  ; L7
+
+[W]
+f1, f2, f3
+
+[rules]
+r1: f2 -> r1  ; L3 %自由選択で説明する
+r2: -f2 -> -r1  ; L3 %自由選択で説明する（必要条件の否定）
+r3: -r1 -> -k1  ; L2 要件の否定による主張 至善 の不成立
+r4: f3 -> r2  ; L7 %意志で説明する
+r5: -f3 -> -r2  ; L7 %意志で説明する（必要条件の否定）
+r6: -r2 -> -k2  ; L6 要件の否定による主張 暴君 の不成立
+
+[defaults]
+至善: f1, r1 : k1, c1 / k1, c1  ; claim L2 主張
+暴君: f1, r2 : k2, -c1 / k2, -c1  ; claim L6 主張
+
+[priority]
+
+[extensions]
+; 衝突しうるデフォルト: 至善, 暴君
+E1 preferred:
+  generating: 至善
+  literals: k1, f1, r1, f2, c1, r2, f3
+E2 preferred:
+  generating: 暴君
+  literals: f1, r1, f2, -c1, k2, r2, f3
+
+[marks]
+
+[summary]
+extensions: 2 (preferred: 2)
+skeptical: （主張・結論はなし）
+credulous: k1, c1, -c1, k2
+; 検証の範囲: 評価 0 個（未審査 0・ok 0・doubtful 0・reject 0。doubtful と未審査の評価も推論を止めない）。最終的な結論 2 個のうち、成り立つもの 0 個、理論の中に対立する命題（否定）がないもの 0 個。

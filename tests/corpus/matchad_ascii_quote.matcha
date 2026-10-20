@@ -1,0 +1,11 @@
+// Matcha-D: "要件" は「要件」の別表記（英文のため）
+#Taking^Fifth Amendment <= the city: (
+    "public use" <= the stadium is open to everyone@a public use &
+    !"just compensation" <= the owner's offer was refused
+) >> the taking is lawful as taking
+
+#Objection <= the city: (
+    "private benefit" <= a single developer profits@mainly private
+) >> not the taking is lawful as objection
+
+:: priority $objection > $taking

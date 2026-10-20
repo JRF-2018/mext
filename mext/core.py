@@ -161,7 +161,41 @@ class AIDirectives:
         return text
 
 
-QSTR = r'"((?:[^"\\]|\\.)*)"'
+# .mext の文字列: "…"（中の " と \ は \" \\ と書く）か '…'（文言に " を含み ' を含まないとき）
+QSTR = r'"((?:[^"\\]|\\.)*)"|(?<![^\s,&(:/\-!¬])\'((?:[^\'\\]|\\.)*)\''
+QRE = re.compile(QSTR)
+
+
+def unq(m):
+    """QRE の一致から文言を得る（\\" などのエスケープを戻す）"""
+    t = m.group(1) if m.group(1) is not None else m.group(2)
+    return re.sub(r'\\(.)', r'\1', t)
+
+
+def qs(text):
+    """文言を .mext の文字列として書く"""
+    if '"' in text and "'" not in text:
+        return f"'{text}'"
+    return '"' + text.replace('\\', '\\\\').replace('"', '\\"') + '"'
+
+
+def mentions(line, text):
+    """行が文言を（エスケープした形も含めて）含むか"""
+    return text in line or qs(text)[1:-1] in line
+
+
+def split_unquoted(s, seps):
+    """文字列（"…" と '…'）の外にある seps の文字の位置を返す"""
+    out, i, start = [], 0, 0
+    while i < len(s):
+        m = QRE.match(s, i) if s[i] in '"\'' else None
+        if m:
+            i = m.end()
+            continue
+        if s[i] in seps:
+            out.append(i)
+        i += 1
+    return out
 
 
 FACT_KINDS = ('記述', '仮定', '確認済み', '著者の主張')
@@ -170,14 +204,22 @@ FACT_KIND_JA2EN = {v: k for k, v in FACT_KIND_EN.items()}
 CONNECTIVE_EN = {'explicit': '明示', 'reading': '読み'}
 
 
+def split_words(s):
+    """空白で区切った語と文字列: (語のリスト, 文字列だったか)"""
+    words, quoted = [], []
+    for m in re.finditer(QSTR + r'|(\S+)', s):
+        q = m.group(3) is None
+        words.append(unq(m) if q else m.group(3))
+        quoted.append(q)
+    return words, quoted
+
+
 def parse_ai_line(line, ai, lineno, errs):
     body, note = split_note(line)
     s = body.strip()
     if not s:
         return
-    toks = re.findall(QSTR + r'|(\S+)', s)
-    words = [(q if q else w) for q, w in toks]
-    quoted = [bool(q) for q, w in toks]
+    words, quoted = split_words(s)
     cmd = words[0] if words else ''
     try:
         if cmd == 'same' and len(words) == 3:
@@ -207,19 +249,18 @@ def parse_ai_line(line, ai, lineno, errs):
         errs.append(_t('[ai] {n} 行目を解釈できません: {l}', '[ai] cannot parse line {n}: {l}', n=lineno, l=line.strip()))
 
 
+def quote_text(n):
+    """「」の要件と "" の要件（英語のための Matcha-D の別表記）の文言"""
+    if getattr(n, 'qchar', '「') == '"':
+        return f'"{n.head}"' + (f' {n.suffix}' if n.suffix else '')   # 英文では接尾の語を空白で区切る
+    return f'「{n.head}」{n.suffix or ""}'
+
+
 def split_note(line):
-    """; 以降を注として分ける（"…" の中の ; は除く）"""
-    in_q, esc = False, False
-    for i, ch in enumerate(line):
-        if esc:
-            esc = False
-            continue
-        if ch == '\\':
-            esc = True
-        elif ch == '"':
-            in_q = not in_q
-        elif ch == ';' and not in_q:
-            return line[:i], line[i + 1:].strip()
+    """; 以降を注として分ける（文字列の中の ; は除く）"""
+    pos = split_unquoted(line, ';')
+    if pos:
+        return line[:pos[0]], line[pos[0] + 1:].strip()
     return line, ''
 
 
@@ -391,7 +432,7 @@ class Compiler:
 
     def node_text(self, n):
         if n.kind == 'req':
-            return f'「{n.head}」{n.suffix or ""}' if n.quote else f'%{n.head}'
+            return quote_text(n) if n.quote else f'%{n.head}'
         if n.kind == 'ref':
             return f'${n.head}'
         return n.head or ''
@@ -640,10 +681,10 @@ class Compiler:
         neg = s.startswith('-')
         if neg:
             s = s[1:].strip()
-        m = re.fullmatch(QSTR, s)
+        m = QRE.fullmatch(s)
         if not m:
             raise ValueError(_t('リテラルは "文言" か -"文言" で書いてください: {s}', 'write a literal as "text" or -"text": {s}', s=s))
-        t = m.group(1).replace('\\"', '"')
+        t = unq(m)
         if t not in self.th.atoms and self.th.aliases.get(t) and len(self.th.aliases[t]) == 1:
             l = next(iter(self.th.aliases[t]))       # 別名（ラベル・元の文言）で指した場合
         else:
@@ -652,28 +693,18 @@ class Compiler:
 
 
 def split_top(s, sep):
-    in_q = False
-    for i, ch in enumerate(s):
-        if ch == '"':
-            in_q = not in_q
-        elif ch == sep and not in_q:
-            return s[:i], s[i + 1:]
+    pos = split_unquoted(s, sep)
+    if pos:
+        return s[:pos[0]], s[pos[0] + 1:]
     raise ValueError(_t('{s} がありません', '{s} is missing', s=sep))
 
 
 def split_lits(s):
-    out, cur, in_q = [], '', False
-    for ch in s:
-        if ch == '"':
-            in_q = not in_q
-        if ch in ',&' and not in_q:
-            if cur.strip():
-                out.append(cur)
-            cur = ''
-        else:
-            cur += ch
-    if cur.strip():
-        out.append(cur)
+    out, prev = [], 0
+    for p in split_unquoted(s, ',&') + [len(s)]:
+        if s[prev:p].strip():
+            out.append(s[prev:p])
+        prev = p + 1
     return out
 
 
@@ -1068,7 +1099,7 @@ def render_generated(th, exts, pref, conflicting, diags):
     out.append('[atoms]')
     for a in sorted(th.atoms.values(), key=lambda a: a.id):
         ln = ','.join(str(x) for x in a.lines)
-        out.append(f'{a.name:<6} {a.kind:<6} "{a.text}"' + (f'  ; {ln}' if ln else ''))
+        out.append(f'{a.name:<6} {a.kind:<6} {qs(a.text)}' + (f'  ; {ln}' if ln else ''))
     out.append('')
     out.append('[W]')
     out.append(fmt_lits(th, th.W))
@@ -1185,6 +1216,7 @@ def cmd_init(args):
                     '; MEXT: Matcha EXTension notation. See docs/mext.md of mext (references/mext.md in the skill).\n\n'
                     '[ai]\n'
                     '; judgments by the AI (or a person). Write the reason after ; on each line.\n'
+                    ';   quote texts with "…" (if a text contains ", quote it with \'…\' or write \\")\n'
                     ';   same "representative" "same meaning"\n'
                     ';   neg  "A" "B"                 … B is the negation of A\n'
                     ';   failure "text" / effect "text" … read a conclusion as a consequence of failure / an effect\n'
@@ -1203,6 +1235,7 @@ def cmd_init(args):
                     '; MEXT: Matcha EXTension notation。書式は mext の docs/mext.md（スキルでは references/mext.md）を参照。\n\n'
                     '[ai]\n'
                     '; AI（または人）の判断。各行の ; 以降に理由を書く。\n'
+                    ';   文言は "…" で囲む（文言に " を含むなら \'…\' で囲むか、\\" と書く）\n'
                     ';   same "代表の文言" "同じ意味の文言"\n'
                     ';   neg  "文言A" "文言B"        … B は A の否定\n'
                     ';   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む\n'
@@ -1257,8 +1290,8 @@ def lit_from_text(th, s, errs=None):
     neg = s.startswith('-') or s.startswith('¬') or s.startswith('not ')
     if neg:
         s = s[4:].strip() if s.startswith('not ') else s[1:].strip()
-    m = re.fullmatch(QSTR, s)
-    t = m.group(1) if m else s
+    m = QRE.fullmatch(s)
+    t = unq(m) if m else s
     if t in th.atoms:
         l = th.atoms[t].id
     elif t in getattr(th, 'by_name', {}):
@@ -1542,9 +1575,7 @@ def cmd_lean(args):
 
 
 LEAN_PRELUDE = '''/-
-  MEXT の Extension 検証（mext.py が自動生成）
-  リテラルは整数で表す: 原子 i は i、その否定は -i。
-  Γ(E) を有限回の反復で計算し、Γ(E) = E を decide +kernel（カーネルでの評価）で確かめる。
+  {c_head}
 -/
 namespace Mext
 
@@ -1565,11 +1596,11 @@ def sameSet (a b : List Int) : Bool := subsetL a b && subsetL b a
 
 def consistentL (S : List Int) : Bool := S.all (fun x => !S.contains (-x))
 
-/-- E に照らして正当化が無矛盾なデフォルト -/
+/-- {c_ok} -/
 def okDefaults (T : Theory) (E : List Int) : List Dflt :=
   T.defaults.filter (fun d => d.just.all (fun j => !E.contains (-j)))
 
-/-- 1 ステップ: 規則と（前提が満たされた）デフォルトの結論を加える -/
+/-- {c_step} -/
 def step (T : Theory) (ds : List Dflt) (S : List Int) : List Int :=
   let fromRules := (T.rules.filter (fun r => subsetL r.1 S)).map (fun r => r.2)
   let fromDefs := ((ds.filter (fun d => subsetL d.pre S)).map (fun d => d.concl)).flatten
@@ -1579,11 +1610,11 @@ def iter (T : Theory) (ds : List Dflt) : Nat → List Int → List Int
   | 0, S => S
   | n + 1, S => iter T ds n (step T ds S)
 
-/-- Γ(E)（反復回数は規則とデフォルトの数 + 1 で十分） -/
+/-- {c_gamma} -/
 def gamma (T : Theory) (E : List Int) : List Int :=
   iter T (okDefaults T E) (T.rules.length + T.defaults.length + 1) T.W
 
-/-- E は Extension か（無矛盾で、Γ(E) = E） -/
+/-- {c_ext} -/
 def isExtension (T : Theory) (E : List Int) : Bool :=
   consistentL E && sameSet (gamma T E) E
 
@@ -1591,12 +1622,34 @@ end Mext
 '''
 
 
+def lean_prelude():
+    c = {
+        'c_head': _t('MEXT の Extension 検証（mext.py が自動生成）\n'
+                     '  リテラルは整数で表す: 原子 i は i、その否定は -i。\n'
+                     '  Γ(E) を有限回の反復で計算し、Γ(E) = E を decide +kernel（カーネルでの評価）で確かめる。',
+                     'Verification of MEXT Extensions (generated by mext)\n'
+                     '  Literals are integers: atom i is i, its negation -i.\n'
+                     '  Γ(E) is computed by finitely many iterations, and Γ(E) = E is checked by decide +kernel (evaluation in the kernel).'),
+        'c_ok': _t('E に照らして正当化が無矛盾なデフォルト', 'defaults whose justifications are consistent with E'),
+        'c_step': _t('1 ステップ: 規則と（前提が満たされた）デフォルトの結論を加える',
+                     'one step: add the heads of rules and the conclusions of defaults (whose prerequisites hold)'),
+        'c_gamma': _t('Γ(E)（反復回数は規則とデフォルトの数 + 1 で十分）',
+                      'Γ(E) (the number of rules and defaults + 1 iterations suffice)'),
+        'c_ext': _t('E は Extension か（無矛盾で、Γ(E) = E）', 'whether E is an Extension (consistent, and Γ(E) = E)'),
+    }
+    out = LEAN_PRELUDE
+    for k, v in c.items():
+        out = out.replace('{' + k + '}', v)
+    return out
+
+
 def lean_source(th, exts, ns, fname, import_spec=False):
     def ll(ls):
         return '[' + ', '.join(str(x) for x in ls) + ']'
-    head = (f'import {import_spec}\n\n/- MEXT の Extension 検証（mext.py が自動生成）。検査器と健全性定理は '
-            f'{import_spec} にある。 -/\n') if import_spec else LEAN_PRELUDE
-    lines = [head, f'namespace Mext.{ns}', '', f'/-! {fname} の原子命題']
+    head = (f'import {import_spec}\n\n/- ' + _t('MEXT の Extension 検証（mext.py が自動生成）。検査器と健全性定理は {m} にある。',
+                                                 'Verification of MEXT Extensions (generated by mext). The checker and the soundness '
+                                                 'theorem are in {m}.', m=import_spec) + ' -/\n') if import_spec else lean_prelude()
+    lines = [head, f'namespace Mext.{ns}', '', '/-! ' + _t('{f} の原子命題', 'atoms of {f}', f=fname)]
     for a in sorted(th.atoms.values(), key=lambda a: a.id):
         lines.append(f'  {a.id} = {a.name}: {a.text.replace("-/", "- /")}')
     lines.append('-/')
@@ -1613,13 +1666,14 @@ def lean_source(th, exts, ns, fname, import_spec=False):
     lines.append('')
     for i, E in enumerate(exts, 1):
         if E == INCONSISTENT:
-            lines.append(f'-- E{i} は矛盾した Extension（省略）')
+            lines.append('-- ' + _t('E{i} は矛盾した Extension（省略）', 'E{i} is an inconsistent Extension (omitted)', i=i))
             continue
         lst = sorted(E, key=lambda l: (abs(l), l < 0))
         lines.append(f'def E{i} : List Int := {ll(lst)}')
         lines.append(f'theorem E{i}_isExtension : Mext.isExtension T E{i} = true := by decide +kernel')
         if import_spec:
-            lines.append(f'/-- E{i} は Reiter の Extension である（健全性定理による） -/')
+            lines.append('/-- ' + _t('E{i} は Reiter の Extension である（健全性定理による）',
+                                     'E{i} is a Reiter Extension (by the soundness theorem)', i=i) + ' -/')
             lines.append(f'theorem E{i}_reiter : Mext.ReiterExtension T E{i} := Mext.isExtension_sound T E{i} E{i}_isExtension')
         lines.append('')
     lines.append(f'end Mext.{ns}')
@@ -1658,10 +1712,12 @@ def main(argv=None):
     p.add_argument('-o', '--output')
     p.add_argument('--namespace')
     try:
-        from . import analysis
+        from . import analysis, compare
     except ImportError:          # パッケージとしてではなく直接実行された場合
         import analysis          # noqa: E402
+        import compare           # noqa: E402
     more = analysis.add_parsers(sub)
+    more.update(compare.add_parsers(sub))
     for sp in sub.choices.values():
         sp.add_argument('--lang', choices=['ja', 'en'], help='出力の言語（既定は環境変数 MEXT_LANG、なければ ja） / output language')
     args = ap.parse_args(argv)

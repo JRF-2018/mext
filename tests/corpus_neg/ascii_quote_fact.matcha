@@ -1,0 +1,4 @@
+// 事実の文が "…" で始まると、要件と読まれる（警告）
+#Refusal <= the owner: (
+    %Refused <= "No," the owner said
+) >> the owner refused

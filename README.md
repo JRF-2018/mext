@@ -6,7 +6,7 @@ Matcha の法的推論コードをデフォルト論理として読む道具一�
 
 > **注意**
 > - [Matcha](https://www.elecode.jp/matcha) は花房孟胤氏による法的推論の形式言語である。本リポジトリはその文法を、公開されている用例から読み取って実装したものである。
-> - 本リポジトリの例外記法 **Matcha-D（`!>` / `>> not`・`>> !` / `:: 優先`、および主張への `as` 名前付け）は非公式の拡張で、Elecode／花房氏とは無関係である**。
+> - 本リポジトリの例外記法 **Matcha-D（`!>` / `>> not`・`>> !` / `:: 優先`、主張への `as` 名前付け、英文のための `"要件"`）は非公式の拡張で、Elecode／花房氏とは無関係である**。
 > - 名前付けの `as`・参照の `$`・見出しの `::`・コメントの `//` は、花房氏の連載の用例にあるものを使っている（詳しくは [docs/matcha_grammar.md](docs/matcha_grammar.md) §1・§5）。
 
 ## 何をするか
@@ -27,12 +27,13 @@ Matcha の法的推論コードをデフォルト論理として読む道具一�
   - 優先順位を尊重する preferred Extension の選択（Brewka & Eiter 1999 の考え方による）
   - 主張された Extension の検証と、導出の根拠・不成立の理由の説明
   - Lean 証明の出力
-- **AI の部分**（スキル `mext-analysis`、`matcha-analysis`、`matcha-default-extensions`）が受け持つもの:
+- **AI の部分**（スキル `mext-analysis`、`matcha-analysis`、`matcha-default-extensions`、`mext-compare`）が受け持つもの:
   - 文書の論証を Matcha に書き起こすこと（原文との対応表、補った前提、落としたものを記録する）
   - 命題の同一・否定の判断
   - 結論の型（成立の効果か、不成立からの帰結か）の判断
   - 「事実@評価」のあてはめの実質審査
   - Extension の予測と、「論証は正しいか」のレポート
+  - 同じ文書の二つの読みの対応づけと、違いの解釈（読みの比較）
 
   AI の判断は、すべて MEXT ファイルの `[ai]` 節に理由とともに書かれ、人が監査できる。
 
@@ -46,14 +47,14 @@ pip install git+https://github.com/JRF-2018/mext
 
 `matcha-check` と `mext` のコマンドが入る（`python3 -m mext.matcha_check`、`python3 -m mext` でも呼べる）。
 
-### Claude Code のプラグイン（スキル 3 つ）
+### Claude Code のプラグイン（スキル 4 つ）
 
 ```bash
 claude plugin marketplace add JRF-2018/mext
 claude plugin install mext@jrf-mext
 ```
 
-あるいは、`skills/` の中の三つのディレクトリを、プロジェクトの `.claude/skills/` か `~/.claude/skills/` にコピーしてもよい（`mext-analysis` はほかの二つの手順を参照するので、三つともコピーする）。スキルは `python3 -m mext` を呼ぶので、上の Python パッケージも入れておく。
+あるいは、`skills/` の中の四つのディレクトリを、プロジェクトの `.claude/skills/` か `~/.claude/skills/` にコピーしてもよい（スキルどうしが手順を参照するので、すべてコピーする）。スキルは `python3 -m mext` を呼ぶので、上の Python パッケージも入れておく。
 
 ## スキル
 
@@ -62,10 +63,12 @@ claude plugin install mext@jrf-mext
 | `mext-analysis`（mext分析） | 「この文書を mext分析して」 | 任意の文書 → `X.matcha`、`X.mext`、レポート `X.mext-analysis.md` |
 | `matcha-analysis`（matcha分析） | 「この文書を matcha分析して」 | 任意の文書 → `X.matcha`、メモ `X.matcha.md`（原文との対応表・補った前提・落としたもの） |
 | `matcha-default-extensions` | 「X.matcha の Extension を調べて」 | `.matcha` → `X.mext`、レポート `X.report.md` |
+| `mext-compare`（読みの比較） | 「この二つの読みを比べて」 | 同じ文書の `A.mext` と `B.mext` → 比較のファイル `A.vs.B.compare`、レポート `A.vs.B.compare.md` |
 
 - **mext分析**は、文書の論証を Matcha に書き起こし（matcha分析）、デフォルト論理として Extension を計算・検証し、「この文書の論証は形式的に妥当か、実質的に説得的か、何に依存しているか」を述べるレポートを返す。法律の文書に限らず、論説、評論、企画書などにも使える。文書が大きいときは、レポートの長さ（要点／標準／詳細）を先に聞く。
 - 決定論的なのは mext の部分（構文チェック、変換、Extension、Lean）だけで、書き起こしと審査は AI の判断である。そのため、書き起こしのどの行が原文のどこから来たか、AI が何を補い、何を落とし、どう評価したかを、すべてファイルに残す。
 - 書き起こしは AI の解釈なので、スキルは `lint` の警告を受けて書き起こしを磨き上げる手順を踏む。書き直す前の版は `snapshot` で残し、`diff` で前後を比べ、何を受けて何を直したかを記録する。書き直してよいのは原文への忠実さと粒度を上げるためだけで、結論を出す（消す）ための書き直しは禁じている。
+- **読みの比較**は、同じ文書を別々に（別の AI や人が）書き起こした二つの読みを突き合わせ、どこで読みが分かれ、それが結論の成否や依存をどう変えるかを、原文に照らして述べる。両方の読みで同じ前提が決め手なら、それは原文の論証の弱点である見込みが高く、一方の読みでしか現れない結果は、書き起こしの選択による見込みが高い。
 - 試した例は [examples/analysis/](examples/analysis/) にある。
 
 ### 英語での利用
@@ -98,6 +101,8 @@ mext audit X.mext                                 # 分析の手順の抜けの�
 mext changed X.check.mext                         # 書き起こしの後に .matcha やメモが変わったか
 mext snapshot X.mext && （X.matcha を直す） && mext solve X.mext && mext diff X.v1.mext X.mext
                                                   # 書き起こしを直す前後の、帰結・依存・審査の差
+mext compare --init A.mext B.mext -o A.vs.B.compare && （[match] を書く） && mext compare A.vs.B.compare
+                                                  # 同じ文書の二つの読みの、結論ごとの成否・決め手・依存の違い
 ```
 
 - **感度分析**（`sensitivity`）は、争いうる前提（評価、主張、`[extra]` で足した前提など）を一つずつ、または組で外して Extension を計算し直す。そして結論ごとに、外すと成り立たなくなる前提、外すと否定が成り立つ前提、AI が doubtful とした評価のうち結論が依存しているものを示す。「Extension が一つで結論が出た」ことが、何に支えられているかを見るためのものである。
@@ -107,6 +112,7 @@ mext snapshot X.mext && （X.matcha を直す） && mext solve X.mext && mext di
 - **audit** は、分析の手順の抜け（書き起こしの記録、未審査の評価、未記録の結び方、予測の検証、出力のファイルなど）を一覧にする。スキルは最後にこれを回し、✗ をなくすか、なくせない理由をレポートに書く。手順を守ったかの点検を、スキルの指示の文章ではなく道具に任せるためのものである。
 - **summary** は、最終的な結論ごとの成否・対立する命題の有無・決め手になる前提と、争点（結論が依存している doubtful の評価）を一画面にまとめる。全表と全導出への入口である。
 - **lint** は、同語反復の評価（`%A <= 事実@A`）、結論の文言の書き写し、立証の手段のない要件など、書き起こしの粗さを知らせる。
+- **compare** は、同じ文書の二つの読みを比べる。原子の文言は読みごとに違う（言語が違うこともある）ので、どの結論・前提が対応するかは AI か人が比較のファイルの `[match]` に理由つきで書き、道具は対応ごとに成否・決め手・共通の決め手・補った前提への依存・結び方・独立した経路を比べる。文言が同じものは自動で対応づける。
 - **diff** は、原子を番号ではなく文言で対応づけて比べる。書き起こしを直すと原子の番号や行番号がずれるので、普通の diff では、論証の何が変わったか（どの結論が否定に転じたか、何に依存するようになったか、どの審査が外れたか）が読めないためである。
 
 Claude Code では次のように使う。プラグインとして入れた場合は、プラグイン名の名前空間が付く。
@@ -134,6 +140,8 @@ Claude Code では次のように使う。プラグインとして入れた場�
 ```
 
 `mext solve` の結果は、Reiter の Extension が 2 個、preferred Extension が 1 個（ペンギン例外が勝つ）になる。
+
+英文では、法文上の文言の要件「…」を `"public use"` のように ASCII の二重引用符でも書ける（Matcha-D、0.5.0 以降）。要素の先頭に置いたときだけ要件の記法になる。`.mext` の中では、`"` を含む文言を `'…'` で囲むか `\"` と書く。
 
 ## 文書
 
