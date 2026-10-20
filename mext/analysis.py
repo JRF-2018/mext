@@ -106,8 +106,8 @@ def candidates(th, facts=False):
         if d.kind in ('eval', 'issue', 'reason', 'extra', 'claim'):
             if d.kind == 'eval':
                 text = th.lit_text(d.concl[0])
-                rv = th.reviews.get(text)
-                review = rv[0] if rv else ''
+                # 実際に効いた審査（"@評価" などの別名で書かれた review も含む）
+                review = getattr(th, 'eval_status', {}).get(text) or ''
                 ds = multi[d.concl[0]]
                 if len(ds) > 1:
                     if d is ds[0]:

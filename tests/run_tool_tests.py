@@ -135,6 +135,8 @@ try:
     check('review / supplied: 素の文言で指しても「見当たらない」と言われない', not mf.errs, str(mf.errs))
     cands = analysis.candidates(th)
     check('supplied: 評価の部分だけで指せる', any(c.supplied for c in cands if c.kind.startswith('eval')))
+    check('review: 評価の部分だけで指した審査が、感度分析の候補にも表示される',
+          all(c.review == 'doubtful' for c in cands if c.kind.startswith('eval')), str([(c.kind, c.review) for c in cands]))
 finally:
     shutil.rmtree(d)
 
