@@ -1,0 +1,30 @@
+mext分析が終わりました。書き起こしが人の手で直されていた（`因果留保` から `!> $賛同` が外されていた）ので、非対話の実行の手順に従いました。人の書いた `kindness_essay.matcha` と `kindness_essay.matcha.md` には手を付けていません。今の書き起こしを正として分析し、それに合わせた新しいメモは `kindness_essay.matcha.proposed.md` として別に作りました。
+
+## 0. 結論
+
+- **(a) 形式的に導けるか**: 人が直した版では、第6段落の結論は preferred Extension（E2、ただ一つ）に含まれます。ただし、AI がもともと読んでいたように「第5段落の留保が賛同を覆す（阻却）」とすると、結論は**成り立ちません**（試算 `alt-undercut`）。「否定する根拠（反駁）」と読むと、結論は一部の preferred Extension でしか成り立ちません（試算 `alt-rebut`、信憑的帰結）。結論が成り立つかどうかは、第5段落の読み方一つで決まります。
+- **(b) 実質的に説得的か**: 弱いです。
+  - 結論の後半「想像にも支えられている」を支えるのは「話をよく聞く」という伝聞（p7、doubtful）だけです。著者自身も第5段落で、因果の向きはわからないと認めています。
+  - 人が直した版では、その留保はどの結論にもつながりません（lint の「行き止まりの主張」、sensitivity でもどの結論の依存にも出ない）。
+- **(c) 何に依存しているか**（sensitivity）: 最終の結論には、一つ外すだけで成り立たなくなる前提が 7 個あり、一本の鎖で支えられています。そのうち争いうる評価は二つで、どちらも doubtful です。
+  - p4「人目のない場面での親切は評判への投資にならない」
+  - p7「よく聞く話は実際の傾向を示している」
+
+  補った前提はありません。
+- **検証の範囲**: 評価 3 個（3 個とも doubtful）。最終的な結論は 4 個で、成り立つのは 3 個です。そのうち 3 個には、理論の中に対立する命題がありません。これは反対の根拠に勝ったのではなく、反対の根拠が書かれていないだけです。主な結論もその一つです。
+
+**予測の検証**: 人の書いたメモにあった事前の予測（改訂前に書かれたもの）は外れました（verify NG）。原因は書き起こしの誤りではなく、予測と人の改訂が第5段落を違う読み方をしていることです。同じ予測は `alt-undercut` では当たります。Lean の検査（`kindness_essay.lean`）は通りました。
+
+**道具について**: 気づいたことを三つ、レポートの末尾に書きました。
+- `neg` に「〔対象〕」なしの文言を書くと、注意は出るものの、その `neg` は効かないまま解かれます。
+- `changed` は変わったかどうかしか示さず、差分は示しません。
+- 主張の対象（甲野氏など）が、事実の種別の「未分類」に数えられます。
+
+`tests/analysis_runs4/` は git で管理されていないので、コミットはしていません。
+
+## ファイル（`tests/analysis_runs4/kindness_human/`）
+- `kindness_essay.mext-analysis.md` — **最終レポート**
+- `kindness_essay.matcha.proposed.md` — 今の書き起こしに合わせた新しいメモの提案
+- `kindness_essay.mext`、`kindness_essay.summary.md`、`kindness_essay.connectives.md`、`kindness_essay.sensitivity.md`、`kindness_essay.report-tables.md`、`kindness_essay.lean`
+- `kindness_essay.alt-undercut.matcha`、`kindness_essay.alt-undercut.mext`、`kindness_essay.alt-undercut.summary.md` — 試算（AI の元の読み: 阻却）
+- `kindness_essay.alt-rebut.mext`、`kindness_essay.alt-rebut.summary.md` — 試算（反駁の読み）

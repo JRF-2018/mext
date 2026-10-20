@@ -779,6 +779,10 @@ def check_semantics(doc, diags):
                     diags.append(Dn('error', n, f'優先の対象 ${e} は定義されていません'))
         if n.kind == 'issue' and n.norm is None and n.conclusion is None and n.application is None and n.reason is None:
             diags.append(Dn('warning', n, '論点（?）に規範（=>）も結論（>>）もありません'))
+        if n.kind == 'fact' and n.label and re.fullmatch(r'[a-z]+', n.label):
+            # 英文の行末の「… as drivers」は、ラベル付けとして読まれ、事実の文が切れる
+            diags.append(Dn('warning', n, f'事実「{n.head}」の後の「as {n.label}」がラベル付けとして読まれました。'
+                                          '英文の中の as なら、文を言い換えて行末に「as 単語」が来ないようにしてください'))
         if n.kind in ('fact', 'plain', 'claim', 'req', 'issue') and n.head:
             if re.search(r'\b(AND|OR|NOT)\b', n.head):
                 diags.append(Dn('warning', n, 'AND/OR/NOT が文言中にあります。Matcha の論理演算子は & と | です'))

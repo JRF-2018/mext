@@ -1,0 +1,4 @@
+// 英文の行末の「as 単語」がラベルと読まれる落とし穴の試験（警告 1 件）
+#Shops^Survey <= Downtown: (
+    %Pedestrians spend enough <= Pedestrians spend about as much per month as drivers
+) >> A car-free center helps shops as Shops

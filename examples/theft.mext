@@ -1,5 +1,6 @@
 @mext 1
 theory: theft.matcha
+source: theft.matcha sha256=810944ccb6147265
 ; MEXT: Matcha EXTension notation（本レポートの考案）。書式は docs/mext.md を参照。
 
 [ai]

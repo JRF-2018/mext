@@ -75,7 +75,7 @@ class Cand:
 
 
 KIND_JA = {'eval': '評価', 'issue': '論点', 'reason': '理由', 'extra': '追加のデフォルト', 'claim': '主張',
-           'fact': '事実', 'extra-fact': '追加の事実'}
+           'fact': '事実', 'extra-fact': '追加の事実', 'fact-仮定': '事実（仮定）', 'fact-著者の主張': '事実（著者の主張）'}
 
 
 def candidates(th, facts=False):
@@ -93,11 +93,13 @@ def candidates(th, facts=False):
                 text = ', '.join(th.lit_text(c) for c in d.concl)
                 review = ''
             out.append(Cand(None, d.kind, ('d', d.name), d.name, text, d.line, review))
+    fk = getattr(th, 'fact_kinds', {})
     for l in th.W:
         a = th.by_id[abs(l)]
-        if a.kind == 'extra' or facts:
-            out.append(Cand(None, 'extra-fact' if a.kind == 'extra' else 'fact', ('f', l), th.lit_str(l),
-                            th.lit_text(l), a.lines[0] if a.lines else '', ''))
+        kind_ai = fk.get(a.text, (None,))[0]
+        if a.kind == 'extra' or facts or kind_ai in ('仮定', '著者の主張'):
+            kind = 'extra-fact' if a.kind == 'extra' else ('fact-' + kind_ai if kind_ai else 'fact')
+            out.append(Cand(None, kind, ('f', l), th.lit_str(l), th.lit_text(l), a.lines[0] if a.lines else '', kind_ai or ''))
     for i, c in enumerate(out, 1):
         c.id = f'p{i}'
     return out
@@ -411,6 +413,192 @@ def cmd_sensitivity(args):
 
 
 # ---------------------------------------------------------------------------
+# 結び方の感度（connectives）
+# ---------------------------------------------------------------------------
+def connective_groups(th):
+    """二つ以上を並べた箇所（AND / OR の組）: (ファイル, 組のノード, 属する主張, 属する要件)"""
+    out = []
+
+    def rec(f, n, claim, req):
+        if n.kind == 'claim':
+            claim = n
+        if n.kind in ('req', 'issue'):
+            req = n
+        if n.kind == 'group' and len(n.items) >= 2 and n.op in ('AND', 'OR'):
+            out.append((f, n, claim, req))
+        for k in ('facts', 'body', 'reason', 'norm', 'application'):
+            x = getattr(n, k, None)
+            if x is not None:
+                rec(f, x, claim, req)
+        for x in getattr(n, 'items', []) or []:
+            rec(f, x, claim, req)
+    for f, doc in zip(th.files, th.docs):
+        rec(f, doc, None, None)
+    return out
+
+
+def connective_record(th, f, g, claim, req):
+    """[ai] の connective の記録（明示 / 読み / None）"""
+    names = [f'L{g.line}']
+    if len(th.files) > 1:
+        names.append(f'{os.path.splitext(os.path.basename(f))[0]}:L{g.line}')
+    if req is not None and req.head:
+        names += [req.head, f'%{req.head}', f'「{req.head}」']
+    if claim is not None:
+        names += [x for x in (claim.label, claim.head, f'#{claim.head}' if claim.head else None) if x]
+    for nm in names:
+        if nm in getattr(th, 'connectives', {}):
+            return th.connectives[nm][0], nm
+    return None, None
+
+
+def concl_status(th):
+    sk, cr, _, _ = consequences(th)
+    return {th.lit_text(l): 'holds' for l in sk if th.by_id[abs(l)].kind in ('concl', 'claim')}, sk, cr
+
+
+def connective_sensitivity(th, mf):
+    """各組の AND / OR を入れ替えて理論を作り直し、懐疑的帰結（結論・主張）の変化を調べる"""
+    base, sk0, cr0 = concl_status(th)
+    finals = {th.lit_text(l) for l in core.final_conclusions(th)} | {th.lit_text(-l) for l in core.final_conclusions(th)}
+    dep0 = {t: v for t, v in dependency(th).items() if t in finals}
+    mf2 = copy.copy(mf)
+    rows = []
+    for f, g, claim, req in connective_groups(th):
+        old = g.op
+        g.op = 'OR' if old == 'AND' else 'AND'
+        try:
+            mf2.errs = []
+            th2 = core.build_from_docs(mf2, th.ai, th.files, th.docs)
+            new, _, _ = concl_status(th2)
+            dep2 = {t: v for t, v in dependency(th2).items() if t in finals}
+        finally:
+            g.op = old
+        dep_change = [(t, len(dep0[t]), len(dep2[t])) for t in sorted(set(dep0) & set(dep2)) if dep0[t] != dep2[t]]
+        lost = sorted(t for t in base if t not in new)
+        gained = sorted(t for t in new if t not in base)
+        rec, nm = connective_record(th, f, g, claim, req)
+        where = (f'{os.path.basename(f)}:' if len(th.files) > 1 else '') + f'L{g.line}'
+        owner = (f'要件「{req.head}」' if req is not None and req.head else '') or \
+                (f'主張「{claim.label or claim.head}」' if claim is not None else '（最上位）')
+        rows.append({'where': where, 'owner': owner, 'op': old, 'lost': lost, 'gained': gained, 'record': rec,
+                     'final_hit': [t for t in lost + gained if t in finals] + [t for t, _, _ in dep_change],
+                     'dep_change': dep_change, 'n': len(g.items)})
+    return rows
+
+
+def connectives_md(th, rows, path):
+    out = [f'# 結び方の感度: {os.path.basename(path)}', '',
+           '（mext connectives の出力。二つ以上を並べた箇所の AND / OR を一つずつ入れ替えて計算し直し、'
+           '懐疑的帰結（結論・主張）が変わる箇所を示す。結び方が原文に明示されているかの記録は、[ai] の connective による AI の判断）', '']
+    dec = [r for r in rows if r['lost'] or r['gained'] or r['dep_change']]
+    rec = {k: sum(1 for r in dec if r['record'] == k) for k in ('明示', '読み', None)}
+    out.append(f'並べた箇所 {len(rows)} か所のうち、入れ替えると帰結か、最終的な結論の依存（単独で外すと結論が消える前提）が変わるもの {len(dec)} か所'
+               f'（原文に明示 {rec["明示"]}・読み {rec["読み"]}・未記録 {rec[None]}）。'
+               '明示のない結び方が結論を左右しているなら、結論から逆算した結び方でないかを、原文に照らして確かめる。')
+    out += ['', '| 位置 | 属するもの | 今の結び方 | 入れ替えると成り立たなくなる | 入れ替えると新たに成り立つ | 入れ替えると依存が変わる最終的な結論（単独で効く前提の数: 今 → 入れ替え後） | AI の記録 |',
+            '|---|---|---|---|---|---|---|']
+    for r in dec:
+        out.append(f'| {r["where"]} | {esc(r["owner"])} | {r["op"]}（{r["n"]} 項） | '
+                   + esc('、'.join(f'「{t}」' for t in r['lost']) or '—') + ' | '
+                   + esc('、'.join(f'「{t}」' for t in r['gained']) or '—') + ' | '
+                   + esc('、'.join(f'「{t}」 {a} → {b}' for t, a, b in r['dep_change']) or '—') + f' | {r["record"] or "**未記録**"} |')
+    out += ['', '依存の数が減る入れ替え（AND → OR）は結論を壊れにくくし、増える入れ替え（OR → AND）は壊れやすくする。'
+            '今の結び方が、結論を最も壊れにくくする向きに選ばれていて、しかも原文に明示がないなら、とくに確かめる。']
+    quiet = [r for r in rows if r not in dec]
+    if quiet:
+        out += ['', '入れ替えても帰結が変わらない箇所: ' + '、'.join(f'{r["where"]}（{r["op"]}）' for r in quiet)]
+    return '\n'.join(out)
+
+
+def cmd_connectives(args):
+    mf, th, _ = load(args.file)
+    md = connectives_md(th, connective_sensitivity(th, mf), args.file)
+    if args.output:
+        open(args.output, 'w', encoding='utf-8').write(md + '\n')
+        print(f'{args.output} を書き出しました')
+    else:
+        print(md)
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# 書き起こしの後の変更（changed）
+# ---------------------------------------------------------------------------
+def changed(mf):
+    """source: 行に記録したハッシュ値と、今のファイルを比べる。[(ファイル, 状態)]"""
+    base = os.path.dirname(os.path.abspath(mf.path))
+    out = []
+    for rel, h in mf.sources.items():
+        p = os.path.join(base, rel)
+        if not os.path.exists(p):
+            out.append((rel, 'missing'))
+        else:
+            out.append((rel, 'unchanged' if core.file_hash(p) == h else 'changed'))
+    for f in mf.theory_files():
+        m = core.memo_path(f)
+        rel = os.path.relpath(m, base)
+        if os.path.exists(m) and rel not in mf.sources:
+            out.append((rel, 'new'))
+    return out
+
+
+def cmd_changed(args):
+    mf = core.MextFile(args.file).load()
+    if not mf.sources:
+        print(f'{args.file} には source: 行がない（mext 0.3.3 より前に作られた）。変更は判定できない')
+        return 2
+    ja = {'unchanged': '変わっていない', 'changed': '**変わった**', 'missing': '見つからない', 'new': '**記録の後にできた**'}
+    rows = changed(mf)
+    print(f'# 記録の後の変更: {os.path.basename(args.file)}\n')
+    print('（mext changed の出力。この .mext を最後に init / solve した時点のハッシュ値と、今のファイルを比べた）\n')
+    for rel, st in rows:
+        print(f'- {rel}: {ja[st]}')
+    return 1 if any(st != 'unchanged' for _, st in rows) else 0
+
+
+# ---------------------------------------------------------------------------
+# 原文の出典と試算へのたどり
+# ---------------------------------------------------------------------------
+def source_note(th, line):
+    """.matcha の line 行の直前にある // 出典: コメント（単一ファイルの場合）"""
+    if len(th.files) != 1 or not isinstance(line, int) or line <= 0:
+        return ''
+    try:
+        lines = open(th.files[0], encoding='utf-8').read().splitlines()
+    except OSError:
+        return ''
+    for i in range(line - 2, max(-1, line - 8), -1):
+        t = lines[i].strip()
+        if t.startswith('//') and '出典' in t:
+            return t.lstrip('/').strip()
+        if t and not t.startswith('//'):
+            if i < line - 2:
+                break
+    return ''
+
+
+def trial_files(path, text):
+    """同じディレクトリの X.alt-*.mext のうち、本体と違う [ai] / [extra] の行で text を扱っているもの（その前提を変えた試算）"""
+    import glob
+    base = os.path.splitext(path)[0]
+    try:
+        mf0 = core.MextFile(path).load()
+        own = {core.split_note(ln)[0].strip() for _, ln in mf0.ai_lines + mf0.extra_lines}
+    except Exception:          # noqa: BLE001
+        own = set()
+    out = []
+    for f in sorted(glob.glob(base + '.alt-*.mext')):
+        try:
+            mf = core.MextFile(f).load()
+        except Exception:      # noqa: BLE001
+            continue
+        if any(text in ln and core.split_note(ln)[0].strip() not in own for _, ln in mf.ai_lines + mf.extra_lines):
+            out.append(os.path.basename(f))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # 一画面の要約（summary）
 # ---------------------------------------------------------------------------
 def short(c, n=36):
@@ -424,7 +612,11 @@ def short(c, n=36):
 def summary_md(th, mf, path):
     exts, pref, _ = core.solve(th)
     sc = core.scope(th, exts, pref)
-    targets = sc['finals_hold'] or None
+    sk, cr = core.summarize(th, exts, pref)
+    sk, cr = sk or set(), cr or set()
+    # 最終的な結論ごとに、成り立つ側（結論か、その否定）を調べる
+    shown = list(dict.fromkeys((-l if -l in sk else l) for l in sc['finals']))   # 結論とその否定が両方とも最終的な結論のときは一行にする
+    targets = [l for l in shown if l in sk] or None
     res = sensitivity(th, targets)
     cands = {c.id: c for c in res['cands']}
     out = [f'# 要約: {os.path.basename(path)}', '',
@@ -432,14 +624,19 @@ def summary_md(th, mf, path):
            f'- Extension {len(exts)} 個（preferred {sum(1 for p in pref if p)} 個）。',
            f'- 検証の範囲: {core.scope_text(th, sc)}', '']
     finals = sc['finals']
+    crow = connective_sensitivity(th, mf)
+    dec = [r for r in crow if r['final_hit']]
+    if crow:
+        rec = {k: sum(1 for r in dec if r['record'] == k) for k in ('明示', '読み', None)}
+        out.insert(-1, f'- 結び方: 並べた箇所 {len(crow)} か所のうち、入れ替えると最終的な結論か、その依存が変わるもの {len(dec)} か所'
+                       f'（原文に明示 {rec["明示"]}・読み {rec["読み"]}・未記録 {rec[None]}。記録は AI の判断。詳しくは mext connectives）。')
     out += ['## 最終的な結論', '',
             '| 結論 | 成否 | 対立する命題 | 決め手になる争いうる前提（単独で外すと成り立たなくなる） | 注意 |',
             '|---|---|---|---|---|']
-    sk, cr = core.summarize(th, exts, pref)
-    sk, cr = sk or set(), cr or set()
     contested = {}
-    for l in finals[:12]:
-        st = STATUS_JA[status(l, sk, cr)]
+    for l in shown[:12]:
+        st0 = status(l, sk, cr)
+        st = STATUS_JA[st0]
         opp = 'あり' if core.opposed(th, l) else '**なし**'
         p = res['per'].get(l)
         notes = []
@@ -468,8 +665,10 @@ def summary_md(th, mf, path):
             for x in dict.fromkeys(y for g2 in p['groups'] for y in g2):
                 if x not in p['singles'] and cands[x].kind == 'eval' and cands[x].review in ('doubtful', ''):
                     contested.setdefault(x, {'1': [], 'g': []})['g'].append(l)
-        if not core.opposed(th, l):
+        if st0 == 'holds' and not core.opposed(th, l):
             notes.append('反対の根拠が理論にない')
+        elif st0 != 'holds':
+            notes.append('成り立たない理由（要件の不足、例外による阻却、対立する主張など）は mext explain でたどれる')
         out.append(f'| {esc(th.lit_text(l))} | {st} | {opp} | {esc(keys)} | {esc("。".join(notes))} |')
     if len(finals) > 12:
         out.append(f'\n（ほか {len(finals) - 12} 個。mext sensitivity で全部を見る）')
@@ -487,7 +686,15 @@ def summary_md(th, mf, path):
             parts.append(f'単独で外すと {names(d["1"])} が成り立たなくなる')
         if d['g']:
             parts.append(f'組の一員として {names(d["g"])} を支える（これ一つを外しても残る）')
-        out.append(f'- {short(cands[x], 50)}: ' + '。'.join(parts))
+        c = cands[x]
+        nav = [f'L{c.line}'] if c.line else []
+        sn = source_note(th, c.line)
+        if sn:
+            nav.append(sn)
+        tf = trial_files(path, c.text)
+        if tf:
+            nav.append('試算: ' + '、'.join(tf))
+        out.append(f'- {short(c, 50)}: ' + '。'.join(parts) + (f'（{" / ".join(nav)}）' if nav else ''))
     if len(ranked) > 8:
         out.append(f'- ほか {len(ranked) - 8} 個（mext sensitivity の「AI が doubtful とした評価」を見る）')
     if res.get('concerns'):
@@ -670,13 +877,15 @@ def flip(t):
 
 
 def dependency(th):
-    """懐疑的帰結に入る結論の文言 -> 単独で外すと成り立たなくなる前提の文言の集合"""
-    res = sensitivity(th, size=1)
-    cands = {c.id: c for c in res['cands']}
-    out = {}
-    for l, p in res['per'].items():
-        if p is not None:
-            out[th.lit_text(l)] = {f'{KIND_JA.get(cands[x].kind, cands[x].kind)}「{cands[x].text}」' for x in p['singles']}
+    """懐疑的帰結に入る結論の文言 -> 単独で外すと成り立たなくなる前提の文言の集合（候補を一つずつ外して計算する）"""
+    sk0, cr0, _, _ = consequences(th)
+    targets = default_targets(th, sk0)
+    out = {th.lit_text(l): set() for l in targets}
+    for c in candidates(th):
+        sk, cr, _, _ = consequences(drop(th, [c]))
+        for l in targets:
+            if status(l, sk, cr) != 'holds':
+                out[th.lit_text(l)].add(f'{KIND_JA.get(c.kind, c.kind)}「{c.text}」')
     return out
 
 
@@ -789,6 +998,7 @@ def cmd_snapshot(args):
         return 'theory: ' + os.path.join(os.path.dirname(p), mapping.get(os.path.basename(p), os.path.basename(p))) \
             if os.path.dirname(p) else 'theory: ' + mapping.get(p, p)
     txt = re.sub(r'(?m)^theory:\s*(\S+)', fix, txt)
+    txt = re.sub(r'(?m)^source:\s*(\S+)', lambda m: 'source: ' + mapping.get(os.path.basename(m.group(1)), m.group(1)), txt)
     open(dst_mext, 'w', encoding='utf-8').write(txt)
     print(f'{dst_mext} と ' + '、'.join(mapping.values()) + ' に保存しました（書き起こしを直したら mext diff '
           f'{os.path.basename(dst_mext)} {os.path.basename(args.file)} で比べる）')
@@ -806,6 +1016,11 @@ def add_parsers(sub):
     p = sub.add_parser('summary', help='一画面の要約: 最終的な結論ごとの成否・対立する命題・決め手になる前提と、検証の範囲')
     p.add_argument('file')
     p.add_argument('-o', '--output')
+    p = sub.add_parser('connectives', help='結び方の感度: AND / OR を一つずつ入れ替えると、どの帰結が変わるか')
+    p.add_argument('file')
+    p.add_argument('-o', '--output')
+    p = sub.add_parser('changed', help='この .mext を作った後に、.matcha や書き起こしのメモが変わったか')
+    p.add_argument('file')
     p = sub.add_parser('lint', help='書き起こしの粗さの検査')
     p.add_argument('file')
     p = sub.add_parser('diff', help='二つの版の MEXT の、帰結・Extension・評価・[ai] の差')
@@ -816,4 +1031,5 @@ def add_parsers(sub):
     p = sub.add_parser('snapshot', help='X.matcha と X.mext を X.vN.* として保存する')
     p.add_argument('file')
     p.add_argument('--tag', help='版の名前（既定 v1, v2, …）')
-    return {'sensitivity': cmd_sensitivity, 'summary': cmd_summary, 'lint': cmd_lint, 'diff': cmd_diff, 'snapshot': cmd_snapshot}
+    return {'sensitivity': cmd_sensitivity, 'summary': cmd_summary, 'connectives': cmd_connectives,
+            'changed': cmd_changed, 'lint': cmd_lint, 'diff': cmd_diff, 'snapshot': cmd_snapshot}

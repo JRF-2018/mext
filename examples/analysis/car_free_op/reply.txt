@@ -1,0 +1,40 @@
+The mext analysis is finished, and every output file is in `tests/analysis_runs5/car_free_op/`. The op-ed's main conclusion follows formally, but it leans on several weak inferences and has no fallback if any of them fails. I wrote the files in English because the op-ed and your request are in English; mext's own output is pasted unchanged, in Japanese. The report is at the standard length, which I picked without asking because the document is short and has one main conclusion.
+
+## Conclusion (report §0)
+
+- **(a) Formally:** "the city council should adopt a car-free downtown plan" follows. mext finds 2 Extensions, and only one is preferred; the conclusion is in it, so it holds skeptically. In the other Extension the shop owners' fear blocks the business argument. That Extension loses only because of the op-ed's word "But", which ranks the business argument above the fear without giving a reason.
+- **(b) Substantively:** only moderately persuasive. "For these reasons" joins the three reasons with AND, so each one is a single point of failure. Three inferences are doubtful:
+  - **Business:** surveys from unnamed other cities compare what each pedestrian and each driver spends. The shop owners' fear is about how many customers come, and the op-ed doesn't show that lost drivers would be replaced.
+  - **Air quality:** the paragraph blames "traffic", but the plan removes only private cars. I had to supply both this step and the paragraph's conclusion, because the text states neither.
+  - **Disability answer:** permits for disabled *drivers* don't cover people with disabilities who are passengers or who use taxis.
+- **(c) What it depends on:** removing any one of 11 premises makes the main conclusion fail. These include all three doubtful inferences and the author's own claim that "permits … can be kept". The argument has no redundancy anywhere.
+- **Coverage:** of 6 inferences I reviewed, 3 are ok and 3 doubtful. Of the 4 final conclusions, 2 hold. Only one, the answer to the disability objection, has nothing written against it. It holds because no counter-argument was written down, not because it beat one.
+
+**Trials:**
+- **Permits answer rejected:** the plan and the disability objection stand off, and neither wins skeptically. The op-ed's only answer to the objection is the exceptions; it never argues the plan should win anyway.
+- **"But" ranking removed:** the plan still appears in one Extension but no longer holds skeptically.
+
+My prediction, written before the first solve, matched the result. The Lean proof checks.
+
+Two quirks in mext itself, which you may want to look at for mext:
+- The `summary` table lists the plan's conclusion twice. The second row belongs to the disability objection, whose conclusion is the negation of the same statement, but it shows the winning side as "成り立つ".
+- Declaring the fear and the business conclusion as negations of each other merges them. The positive "could help local shops" then appears only as "not hurt".
+
+I haven't committed anything; `tests/analysis_runs5/` is still untracked.
+
+## Files
+
+- `car_free_op.mext-analysis.md` — **final report**
+- `car_free_op.matcha` — Matcha transcription
+- `car_free_op.matcha.md` — notes on the transcription: source mapping, judgments, supplied premises, prior prediction
+- `car_free_op.mext` — the theory with my judgments and the prediction
+- `car_free_op.check.mext` — shape check, with hashes of the source files
+- `car_free_op.summary.md` — `mext summary` output
+- `car_free_op.connectives.md` — `mext connectives` output
+- `car_free_op.sensitivity.md` — `mext sensitivity` output
+- `car_free_op.report-tables.md` — `mext report` output
+- `car_free_op.lean` — Lean proof
+- `car_free_op.alt-permits-reject.mext` — trial with the permits answer rejected
+- `car_free_op.alt-nopriority.matcha`, `car_free_op.alt-nopriority.mext` — trial without the "But" ranking
+
+The source `car_free_op.md` is unchanged.

@@ -1,5 +1,6 @@
 @mext 1
 theory: rule_v1.matcha
+source: rule_v1.matcha sha256=d1046c62f1597b48
 ; MEXT: Matcha EXTension notation。書式は mext の docs/mext.md（スキルでは references/mext.md）を参照。
 
 [ai]

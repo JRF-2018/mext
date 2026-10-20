@@ -1,0 +1,67 @@
+@mext 1
+theory: bare_neg.matcha
+source: bare_neg.matcha sha256=affe5ac99db33d58
+; MEXT: Matcha EXTension notation。書式は mext の docs/mext.md（スキルでは references/mext.md）を参照。
+
+[ai]
+neg "本件の契約は有効である" "本件の契約は無効である"  ; 無効は有効の否定
+; AI（または人）の判断。各行の ; 以降に理由を書く。
+;   same "代表の文言" "同じ意味の文言"
+;   neg  "文言A" "文言B"        … B は A の否定
+;   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む
+;   review "事実@評価" ok|doubtful|reject
+;   concern 名 "前提" "前提" …    … 内容の上で一つの争点を共有する前提（感度分析でまとめて外す）
+;   distinct "前提" "前提" …      … 内容の上で互いに独立な前提
+;   connective "主張のラベルか要件の文言" 明示|読み … 結び方（AND/OR）が原文に明示されているか
+;   fact-kind "事実" 記述|仮定|確認済み|著者の主張 … W の事実の種別
+
+[extra]
+;   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2
+
+[claimed]
+;   E1*: "文言", -"文言"   … 検証したい Extension（* は preferred であることも主張）
+
+; ===== ここから下は mext.py が自動生成（手で直さない） =====
+[atoms]
+k1     claim  "#肯定の主張 [肯定]"  ; L2
+f1     fact   "本件"  ; L2,L5
+r1     req    "肯定／%要件A"  ; L3
+f2     fact   "事実A"  ; L3
+c1     concl  "本件の契約は有効である〔本件〕"  ; L4,L7
+k2     claim  "#否定の主張 [否定]"  ; L5
+r2     req    "否定／%要件B"  ; L6
+f3     fact   "事実B"  ; L6
+
+[W]
+f1, f2, f3
+
+[rules]
+r1: f2 -> r1  ; L3 %要件A
+r2: -f2 -> -r1  ; L3 %要件A（必要条件の否定）
+r3: -r1 -> -k1  ; L2 要件の否定による主張 肯定 の不成立
+r4: f3 -> r2  ; L6 %要件B
+r5: -f3 -> -r2  ; L6 %要件B（必要条件の否定）
+r6: -r2 -> -k2  ; L5 要件の否定による主張 否定 の不成立
+
+[defaults]
+肯定: f1, r1 : k1, c1 / k1, c1  ; claim L2 主張
+否定: f1, r2 : k2, -c1 / k2, -c1  ; claim L5 主張
+
+[priority]
+
+[extensions]
+; 衝突しうるデフォルト: 肯定, 否定
+E1 preferred:
+  generating: 肯定
+  literals: k1, f1, r1, f2, c1, r2, f3
+E2 preferred:
+  generating: 否定
+  literals: f1, r1, f2, -c1, k2, r2, f3
+
+[marks]
+
+[summary]
+extensions: 2 (preferred: 2)
+skeptical: （主張・結論はなし）
+credulous: k1, c1, -c1, k2
+; 検証の範囲: 評価 0 個（未審査 0・ok 0・doubtful 0・reject 0。doubtful と未審査の評価も推論を止めない）。最終的な結論 2 個のうち、成り立つもの 0 個、理論の中に対立する命題（否定）がないもの 0 個。

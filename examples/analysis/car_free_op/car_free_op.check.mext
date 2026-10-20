@@ -1,0 +1,143 @@
+@mext 1
+theory: car_free_op.matcha
+source: car_free_op.matcha sha256=f95176247aacbca9
+source: car_free_op.matcha.md sha256=fb4b651a10b5501f
+; MEXT: Matcha EXTension notation。書式は mext の docs/mext.md（スキルでは references/mext.md）を参照。
+
+[ai]
+; AI（または人）の判断。各行の ; 以降に理由を書く。
+;   same "代表の文言" "同じ意味の文言"
+;   neg  "文言A" "文言B"        … B は A の否定
+;   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む
+;   review "事実@評価" ok|doubtful|reject
+;   concern 名 "前提" "前提" …    … 内容の上で一つの争点を共有する前提（感度分析でまとめて外す）
+;   distinct "前提" "前提" …      … 内容の上で互いに独立な前提
+;   connective "主張のラベルか要件の文言" 明示|読み … 結び方（AND/OR）が原文に明示されているか
+;   fact-kind "事実" 記述|仮定|確認済み|著者の主張 … W の事実の種別
+
+[extra]
+;   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2
+
+[claimed]
+;   E1*: "文言", -"文言"   … 検証したい Extension（* は preferred であることも主張）
+
+; ===== ここから下は mext.py が自動生成（手で直さない） =====
+[atoms]
+k1     claim  "#Safety argument [safety]"  ; L7
+f1     fact   "downtown core"  ; L7,L27,L38,L43,L49
+r1     req    "safety／%private cars are the main source of danger to pedestrians downtown"  ; L9
+f2     fact   "most serious pedestrian injuries in our city happen in the downtown core"  ; L9
+f3     fact   "nearly all of them involve private cars"  ; L9
+x1     aux    "（L9 の AND・2項・1）"  ; L9
+v1     eval   "（most serious pedestrian injuries in our city happen in the downtown core & nearly all of them involve private cars）@the involvement of private cars in nearly all of the injuries shows that the cars cause the danger"  ; L9
+c1     concl  "removing the cars would remove most of the danger〔downtown core〕"  ; L10
+k2     claim  "#Shop owners' objection [fear]"  ; L13
+f4     fact   "local shops"  ; L13,L18
+r2     req    "fear／%customers who drive will stop coming"  ; L14
+f5     fact   "shop owners fear that customers who drive will stop coming"  ; L14
+v2     eval   "shop owners fear that customers who drive will stop coming@the shop owners' fear is well founded"  ; L14
+c2     concl  "a car-free center would hurt local shops〔local shops〕"  ; L15
+k3     claim  "#Business argument [business]"  ; L18
+r3     req    "business／%local shops would not lose sales without customers who drive"  ; L20
+f6     fact   "surveys in other cities suggest that pedestrians visit shops more often and spend about the same per month compared with drivers"  ; L20
+v3     eval   "surveys in other cities suggest that pedestrians visit shops more often and spend about the same per month compared with drivers@the survey results from other cities hold in our city and lost driving customers would be made up by pedestrian customers"  ; L20
+c3     concl  "a car-free center could help local shops rather than hurt them〔local shops〕"  ; L21
+k4     claim  "#Air quality argument [air]"  ; L27
+r4     req    "air／%air quality downtown needs to be improved"  ; L29
+f7     fact   "the nitrogen dioxide levels on our main street regularly exceed the national guideline"  ; L29
+v4     eval   "the nitrogen dioxide levels on our main street regularly exceed the national guideline@exceeding the national guideline shows a problem that calls for action"  ; L29
+r5     req    "air／%removing private cars would cut nitrogen dioxide downtown substantially"  ; L32
+f8     fact   "traffic is the largest source of nitrogen dioxide downtown"  ; L32
+v5     eval   "traffic is the largest source of nitrogen dioxide downtown@private cars make up most of that traffic"  ; L32
+x2     aux    "（L27 の AND・2項・1）"  ; L27
+c4     concl  "a car-free center would improve air quality downtown〔downtown core〕"  ; L34
+k5     claim  "#Disability objection [disability]"  ; L38
+r6     req    "disability／%people with disabilities depend on cars"  ; L39
+f9     fact   "people with disabilities depend on cars"  ; L39
+c5     concl  "the city council should adopt a car-free downtown plan〔downtown core〕"  ; L40,L53
+k6     claim  "#Answer by exceptions [exceptions]"  ; L43
+r7     req    "exceptions／%the concern can be met by exceptions to the plan"  ; L44
+f10    fact   "permits for disabled drivers, delivery vehicles and emergency services can be kept"  ; L44
+v6     eval   "permits for disabled drivers, delivery vehicles and emergency services can be kept@permits for disabled drivers would meet the needs of people with disabilities"  ; L44
+c6     concl  "the disability concern is an argument for exceptions, not against the plan〔downtown core〕"  ; L45
+k7     claim  "#Car-free downtown plan [plan]"  ; L49
+r8     req    "plan／$safety"  ; L50
+r9     req    "plan／$business"  ; L51
+r10    req    "plan／$air"  ; L52
+x3     aux    "（L49 の AND・3項・1）"  ; L49
+ab1    ab     "ab(disability)"
+
+[W]
+f1, f2, f3, f4, f5, f6, f7, f8, f9, f10
+
+[rules]
+r1: f2 & f3 -> x1  ; AND
+r2: -f2 -> -x1  ; AND（必要条件の否定）
+r3: -f3 -> -x1  ; AND（必要条件の否定）
+r4: v1 -> r1  ; L9 %private cars are the main source of danger to pedestrians downtown
+r5: -v1 -> -r1  ; L9 %private cars are the main source of danger to pedestrians downtown（必要条件の否定）
+r6: -r1 -> -k1  ; L7 要件の否定による主張 safety の不成立
+r7: v2 -> r2  ; L14 %customers who drive will stop coming
+r8: -v2 -> -r2  ; L14 %customers who drive will stop coming（必要条件の否定）
+r9: -r2 -> -k2  ; L13 要件の否定による主張 fear の不成立
+r10: v3 -> r3  ; L20 %local shops would not lose sales without customers who drive
+r11: -v3 -> -r3  ; L20 %local shops would not lose sales without customers who drive（必要条件の否定）
+r12: -r3 -> -k3  ; L18 要件の否定による主張 business の不成立
+r13: v4 -> r4  ; L29 %air quality downtown needs to be improved
+r14: -v4 -> -r4  ; L29 %air quality downtown needs to be improved（必要条件の否定）
+r15: v5 -> r5  ; L32 %removing private cars would cut nitrogen dioxide downtown substantially
+r16: -v5 -> -r5  ; L32 %removing private cars would cut nitrogen dioxide downtown substantially（必要条件の否定）
+r17: r4 & r5 -> x2  ; AND
+r18: -r4 -> -x2  ; AND（必要条件の否定）
+r19: -r5 -> -x2  ; AND（必要条件の否定）
+r20: -x2 -> -k4  ; L27 要件の否定による主張 air の不成立
+r21: f9 -> r6  ; L39 %people with disabilities depend on cars
+r22: -f9 -> -r6  ; L39 %people with disabilities depend on cars（必要条件の否定）
+r23: -r6 -> -k5  ; L38 要件の否定による主張 disability の不成立
+r24: v6 -> r7  ; L44 %the concern can be met by exceptions to the plan
+r25: -v6 -> -r7  ; L44 %the concern can be met by exceptions to the plan（必要条件の否定）
+r26: -r7 -> -k6  ; L43 要件の否定による主張 exceptions の不成立
+r27: r8 & r9 & r10 -> x3  ; AND
+r28: -r8 -> -x3  ; AND（必要条件の否定）
+r29: -r9 -> -x3  ; AND（必要条件の否定）
+r30: -r10 -> -x3  ; AND（必要条件の否定）
+r31: -x3 -> -k7  ; L49 要件の否定による主張 plan の不成立
+r32: k1 -> r8  ; L50 $safety の参照
+r33: -k1 -> -r8  ; L50 $safety の参照（必要条件の否定）
+r34: k3 -> r9  ; L51 $business の参照
+r35: -k3 -> -r9  ; L51 $business の参照（必要条件の否定）
+r36: k4 -> r10  ; L52 $air の参照
+r37: -k4 -> -r10  ; L52 $air の参照（必要条件の否定）
+
+[defaults]
+e1: x1 : v1, r1 / v1  ; eval L9 評価 @the involvement of private cars in nearly all of the injuries shows that the cars cause the danger
+safety: f1, r1 : k1, c1 / k1, c1  ; claim L7 主張
+e2: f5 : v2, r2 / v2  ; eval L14 評価 @the shop owners' fear is well founded
+fear: f4, r2 : k2, c2 / k2, c2  ; claim L13 主張
+e3: f6 : v3, r3 / v3  ; eval L20 評価 @the survey results from other cities hold in our city and lost driving customers would be made up by pedestrian customers
+business: f4, r3 : k3, c3 / k3, c3  ; claim L18 主張
+e4: f7 : v4, r4 / v4  ; eval L29 評価 @exceeding the national guideline shows a problem that calls for action
+e5: f8 : v5, r5 / v5  ; eval L32 評価 @private cars make up most of that traffic
+air: f1, x2 : k4, c4 / k4, c4  ; claim L27 主張
+disability: f1, r6 : k5, -c5, -ab1 / k5, -c5  ; claim L38 主張
+e6: f10 : v6, r7 / v6  ; eval L44 評価 @permits for disabled drivers would meet the needs of people with disabilities
+exceptions: f1, r7 : k6, c6 / k6, c6, ab1  ; claim L43 主張
+plan: f1, x3 : k7, c5 / k7, c5  ; claim L49 主張
+
+[priority]
+business > fear
+exceptions > disability
+
+[extensions]
+; 衝突しうるデフォルト: disability, plan
+E1 preferred:
+  generating: e1, safety, e2, fear, e3, business, e4, e5, air, e6, exceptions, plan
+  literals: k1, f1, r1, f2, f3, x1, v1, c1, k2, f4, r2, f5, v2, c2, k3, r3, f6, v3, c3, k4, r4, f7, v4, r5, f8, v5, x2, c4, r6, f9, c5, k6, r7, f10, v6, c6, k7, r8, r9, r10, x3, ab1
+
+[marks]
+
+[summary]
+extensions: 1 (preferred: 1)
+skeptical: k1, c1, k2, c2, k3, c3, k4, c4, c5, k6, c6, k7
+credulous: k1, c1, k2, c2, k3, c3, k4, c4, c5, k6, c6, k7
+; 検証の範囲: 評価 6 個（未審査 6・ok 0・doubtful 0・reject 0。doubtful と未審査の評価も推論を止めない）。最終的な結論 4 個のうち、成り立つもの 3 個、理論の中に対立する命題（否定）がないもの 2 個（これらは、反対の根拠に勝ったのではなく、反対の根拠が書かれていないだけである）。

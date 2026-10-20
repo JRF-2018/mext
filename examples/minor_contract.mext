@@ -1,5 +1,6 @@
 @mext 1
 theory: minor_contract.matcha
+source: minor_contract.matcha sha256=0c43277361951515
 ; MEXT: Matcha EXTension notation（本レポートの考案）。書式は docs/mext.md を参照。
 
 [ai]

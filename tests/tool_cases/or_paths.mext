@@ -1,5 +1,6 @@
 @mext 1
 theory: or_paths.matcha
+source: or_paths.matcha sha256=b564bcbd1bbafe47
 ; MEXT: Matcha EXTension notation。書式は mext の docs/mext.md（スキルでは references/mext.md）を参照。
 
 [ai]

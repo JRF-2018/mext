@@ -144,6 +144,8 @@ class AIDirectives:
         self.review = {}    # 評価デフォルトの文言 "事実@評価" -> (ok|doubtful|reject, 注)
         self.concerns = {}  # 争点の名前 -> ([前提の文言], 注)。内容の上で一つの争点を共有する前提の組（感度分析で使う）
         self.distincts = [] # ([前提の文言], 注)。内容の上で互いに独立だと AI が判断した前提の組
+        self.connectives = {}  # 対象（主張のラベル・要件の文言・L行番号）-> (明示|読み, 注)。結び方（AND/OR）が原文に明示されているか
+        self.fact_kinds = {}   # 事実の文言 -> (記述|仮定|確認済み|著者の主張, 注)
         self.extra = []     # (種類, 内容, 注)
         self.raw = []       # 元の行（書き戻し用）
 
@@ -156,6 +158,9 @@ class AIDirectives:
 
 
 QSTR = r'"((?:[^"\\]|\\.)*)"'
+
+
+FACT_KINDS = ('記述', '仮定', '確認済み', '著者の主張')
 
 
 def parse_ai_line(line, ai, lineno, errs):
@@ -182,6 +187,10 @@ def parse_ai_line(line, ai, lineno, errs):
             ai.concerns[words[1]] = (words[2:], note)
         elif cmd == 'distinct' and len(words) >= 3 and all(quoted[1:]):
             ai.distincts.append((words[1:], note))
+        elif cmd == 'connective' and len(words) == 3 and words[2] in ('明示', '読み'):
+            ai.connectives[words[1]] = (words[2], note)
+        elif cmd == 'fact-kind' and len(words) == 3 and words[2] in FACT_KINDS:
+            ai.fact_kinds[words[1]] = (words[2], note)
         else:
             errs.append(f'[ai] {lineno} 行目を解釈できません: {line.strip()}')
     except IndexError:
@@ -264,6 +273,26 @@ class Compiler:
     def lit(self, kind, text, line=0, aliases=()):
         orig = text
         self.texts.add(orig)
+        if text not in self.ai.neg and text not in self.ai.same:
+            # 結論の原子は「文言〔対象〕」で区別するが、[ai] に素の文言（別名）で書かれた same / neg も効かせる。
+            # 相手の文言が素の文言なら、同じ〔対象〕を補う（同じ対象についての結論どうしの同一視・否定と読む）
+            m = re.search(r'〔[^〕]*〕$', text)
+            q = m.group(0) if m else ''
+
+            def qualify(t):
+                return t if (not q or t.endswith('〕')) else t + q
+            for a in aliases:
+                if a and a != text and (a in self.ai.neg or a in self.ai.same):
+                    if a in self.ai.neg:
+                        self.ai.neg[text] = qualify(self.ai.neg[a])
+                    else:
+                        self.ai.same[text] = qualify(self.ai.same[a])
+                    self.texts.add(a)
+                    break
+            else:
+                for a in aliases:      # 相手の側として素の文言で書かれている場合（警告を出さないように記録する）
+                    if a and (a in self.ai.neg.values() or a in self.ai.same.values()):
+                        self.texts.add(a)
         text = self.ai.canon(text)
         if text in self.ai.neg:
             base = self.ai.canon(self.ai.neg[text])
@@ -819,7 +848,21 @@ def scope(th, exts, pref):
     st = list(getattr(th, 'eval_status', {}).values())
     sk, _ = summarize(th, exts, pref)
     finals = final_conclusions(th)
-    return {'evals': len(st), 'unreviewed': sum(1 for x in st if x is None), 'ok': st.count('ok'),
+    fk = getattr(th, 'fact_kinds', {})
+    targets = set()
+    for doc in getattr(th, 'docs', []) or []:
+        stack = [doc]
+        while stack:
+            n = stack.pop()
+            if n.kind == 'claim' and n.facts is not None and n.facts.kind == 'fact':
+                targets.add(n.facts.head)      # 主張の対象（<= の右）は事実ではなく、何についての主張かの表示
+            stack += [getattr(n, k) for k in ('facts', 'body', 'reason', 'norm', 'application') if getattr(n, k, None) is not None]
+            stack += list(getattr(n, 'items', []) or [])
+    wf = [th.by_id[abs(l)].text for l in th.W if th.by_id[abs(l)].text not in targets]
+    facts = {k: sum(1 for t in wf if fk.get(t, (None,))[0] == k) for k in FACT_KINDS}
+    facts['未分類'] = sum(1 for t in wf if t not in fk)
+    return {'facts_total': len(wf), 'facts': facts,
+            'evals': len(st), 'unreviewed': sum(1 for x in st if x is None), 'ok': st.count('ok'),
             'doubtful': st.count('doubtful'), 'reject': st.count('reject'),
             'finals': finals, 'finals_hold': [l for l in finals if sk and l in sk],
             'unopposed': [l for l in finals if not opposed(th, l)]}
@@ -829,6 +872,9 @@ def scope_text(th, sc):
     """検証の範囲の一行（日本語）"""
     t = (f'評価 {sc["evals"]} 個（未審査 {sc["unreviewed"]}・ok {sc["ok"]}・doubtful {sc["doubtful"]}・reject {sc["reject"]}。'
          'doubtful と未審査の評価も推論を止めない）。')
+    if sc.get('facts_total') and sc['facts']['未分類'] < sc['facts_total']:
+        t += (f'W の事実 {sc["facts_total"]} 個（' + '・'.join(f'{k} {v}' for k, v in sc['facts'].items() if v)
+              + '。種別は AI の判断。仮定と著者の主張は感度分析で外す候補にする）。')
     if sc['finals']:
         t += (f'最終的な結論 {len(sc["finals"])} 個のうち、成り立つもの {len(sc["finals_hold"])} 個、'
               f'理論の中に対立する命題（否定）がないもの {len(sc["unopposed"])} 個')
@@ -860,6 +906,7 @@ class MextFile:
         self.extra_lines = []
         self.ext_claims = []    # [claimed] に書かれた Extension（検証用）: (名前, preferred?, 文言集合)
         self.claimed_lines = []
+        self.sources = {}       # source: 行に記録したファイル -> ハッシュ値
         self.errs = []
 
     def load(self):
@@ -877,6 +924,9 @@ class MextFile:
                 m2 = re.match(r'^theory:\s*(.+?)\s*$', ln)
                 if m2:
                     self.theory_paths.append(split_note(m2.group(1))[0].strip())
+                m4 = re.match(r'^source:\s*(\S+)\s+sha256=([0-9a-f]+)', ln)
+                if m4:
+                    self.sources[m4.group(1)] = m4.group(2)
                 m3 = re.match(r'^options:\s*(.*?)\s*$', ln)
                 if m3:
                     self.options = set(m3.group(1).split(';')[0].split())
@@ -935,6 +985,12 @@ def build(mf, use_review=None):
     if errs:
         msg = '\n'.join('  ' + str(d) for d in errs)
         raise SystemExit(f'Matcha の構文エラーがあるため変換できません:\n{msg}')
+    th = build_from_docs(mf, ai, files, docs)
+    return th, diags
+
+
+def build_from_docs(mf, ai, files, docs):
+    """構文木から理論を作る（結び方の感度分析では、木の AND/OR を入れ替えてから呼ぶ）"""
     comp = Compiler(ai)
     for f, doc in zip(files, docs):
         comp.prefix = os.path.splitext(os.path.basename(f))[0] if len(files) > 1 else ''
@@ -952,7 +1008,7 @@ def build(mf, use_review=None):
     comp.extra(extra, mf.errs)
     known = set(th.atoms) | set(th.aliases)
     for t in list(ai.same) + list(ai.same.values()) + list(ai.neg) + list(ai.neg.values()) \
-            + list(ai.failure) + list(ai.effect) + list(ai.review):
+            + list(ai.failure) + list(ai.effect) + list(ai.review) + list(ai.fact_kinds):
         if t not in known and ai.canon(t) not in known:
             hint = ''
             if '@' in t:     # 評価の文言なら、同じ「@評価」を持つ原子を候補として示す（書き起こしを直した後の付け替えのため）
@@ -968,9 +1024,11 @@ def build(mf, use_review=None):
             mf.errs.append(f'[ai] same / neg の「{t}」は原子の文言ではなく別名です。原子の文言（候補: {cands}）で書いてください')
     th.reviews = dict(ai.review)
     th.concerns, th.distincts = dict(ai.concerns), list(ai.distincts)
+    th.connectives, th.fact_kinds = dict(ai.connectives), dict(ai.fact_kinds)
     th.docs, th.files = docs, files      # lint などが構文木を参照するため
+    th.ai = ai
     th.name_atoms()
-    return th, diags
+    return th
 
 
 def fmt_lits(th, ls):
@@ -1044,7 +1102,34 @@ def render_generated(th, exts, pref, conflicting, diags):
     return '\n'.join(out) + '\n'
 
 
+def file_hash(path):
+    import hashlib
+    with open(path, 'rb') as f:
+        return hashlib.sha256(f.read()).hexdigest()[:16]
+
+
+def memo_path(theory_file):
+    """書き起こしのメモ（matcha分析の X.matcha.md）"""
+    return theory_file + '.md'
+
+
+def source_lines(mf):
+    """元の .matcha と、あれば書き起こしのメモの、ハッシュ値（書き起こしの後に誰かが手を入れたかを見分けるため）"""
+    out = []
+    base = os.path.dirname(os.path.abspath(mf.path))
+    for f in mf.theory_files():
+        out.append(f'source: {os.path.relpath(f, base)} sha256={file_hash(f)}')
+        m = memo_path(f)
+        if os.path.exists(m):
+            out.append(f'source: {os.path.relpath(m, base)} sha256={file_hash(m)}')
+    return out
+
+
 def write_mext(mf, th, exts, pref, conflicting, diags):
+    hdr = [ln for ln in mf.header if not ln.startswith('source:')]
+    idx = max((i + 1 for i, ln in enumerate(hdr) if ln.startswith(('theory:', 'options:'))), default=len(hdr))
+    hdr = hdr[:idx] + source_lines(mf) + hdr[idx:]
+    mf.header = hdr
     head = '\n'.join(mf.header).rstrip()
     parts = [head, '', '[ai]']
     parts += [ln for _, ln in mf.ai_lines if ln.strip()] or ['; （AI の判断をここに書く）']
@@ -1076,7 +1161,9 @@ def cmd_init(args):
                 ';   failure "文言" / effect "文言" … 結論を「不成立からの帰結」「成立の効果」と読む\n'
                 ';   review "事実@評価" ok|doubtful|reject\n'
                 ';   concern 名 "前提" "前提" …    … 内容の上で一つの争点を共有する前提（感度分析でまとめて外す）\n'
-                ';   distinct "前提" "前提" …      … 内容の上で互いに独立な前提\n\n'
+                ';   distinct "前提" "前提" …      … 内容の上で互いに独立な前提\n'
+                ';   connective "主張のラベルか要件の文言" 明示|読み … 結び方（AND/OR）が原文に明示されているか\n'
+                ';   fact-kind "事実" 記述|仮定|確認済み|著者の主張 … W の事実の種別\n\n'
                 '[extra]\n'
                 ';   fact "文言" / rule "a" & "b" -> "c" / default 名: "a" : "b" / "b" / priority 名1 > 名2\n\n'
                 '[claimed]\n'

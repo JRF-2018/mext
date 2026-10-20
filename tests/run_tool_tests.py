@@ -89,6 +89,10 @@ th = theory(os.path.join(EX, 'sublease.mext'))
 md = analysis.sensitivity_md(th, analysis.sensitivity(th), 'sublease.mext')
 check('sensitivity: 組の一員を「単独で外すと」と書かない', '組の一員' in md or '単独で外すと成り立たなくなる**' not in md)
 
+th = theory(os.path.join(TC, 'bare_neg.mext'))
+exts, pref, _ = core.solve(th)
+check('neg: 結論の素の文言で書いた neg も効く（対立して Extension が二つになる）', len(exts) == 2, str(len(exts)))
+
 # --- 検証の範囲
 th = theory(os.path.join(TC, 'three_paths.mext'))
 exts, pref, _ = core.solve(th)
@@ -98,6 +102,38 @@ th = theory(os.path.join(EX, 'tweety.mext'))
 exts, pref, _ = core.solve(th)
 sc = core.scope(th, exts, pref)
 check('scope: 例外のある結論は対立する命題を持つ', not sc['unopposed'], str(sc))
+
+# --- connectives（結び方の感度）
+rw = os.path.join(EX, 'analysis', 'remote_work_op', 'remote_work_op.mext')
+mf, th, _ = analysis.load(rw)
+rows = analysis.connective_sensitivity(th, mf)
+r28 = [r for r in rows if r['where'] == 'L28'][0]
+check('connectives: 三つの理由の AND を OR にすると、主な結論の依存が減る', r28['dep_change'] and r28['dep_change'][0][1:] == (7, 1), str(r28))
+check('connectives: [ai] の記録がなければ未記録とする', r28['record'] is None)
+
+# --- changed と fact-kind（写しで試す）
+d = tempfile.mkdtemp()
+try:
+    for f in ('tweety.matcha',):
+        shutil.copy(os.path.join(EX, f), d)
+    with contextlib.redirect_stdout(io.StringIO()):
+        core.main(['init', os.path.join(d, 'tweety.matcha')])
+    mx = os.path.join(d, 'tweety.mext')
+    check('changed: 作った直後は変わっていない', all(st == 'unchanged' for _, st in analysis.changed(core.MextFile(mx).load())))
+    with open(os.path.join(d, 'tweety.matcha'), 'a', encoding='utf-8') as fh:
+        fh.write('\n// 人が書き足した\n')
+    open(os.path.join(d, 'tweety.matcha.md'), 'w', encoding='utf-8').write('# メモ\n')
+    st = dict(analysis.changed(core.MextFile(mx).load()))
+    check('changed: .matcha の変更と、後からできたメモを見分ける', st.get('tweety.matcha') == 'changed' and st.get('tweety.matcha.md') == 'new', str(st))
+    txt = open(mx, encoding='utf-8').read().replace('[ai]\n', '[ai]\nfact-kind "トゥイーティーはペンギンである" 仮定  ; 試験\n', 1)
+    open(mx, 'w', encoding='utf-8').write(txt)
+    mf, th, _ = analysis.load(mx)
+    cands = analysis.candidates(th)
+    check('fact-kind: 仮定とした事実は感度分析の候補になる', any(c.kind == 'fact-仮定' for c in cands), str([c.kind for c in cands]))
+    exts, pref, _ = core.solve(th)
+    check('fact-kind: 検証の範囲に事実の種別を出す', '仮定 1' in core.scope_text(th, core.scope(th, exts, pref)))
+finally:
+    shutil.rmtree(d)
 
 # --- lint
 mf, th, _ = analysis.load(os.path.join(TC, 'coarse.mext'))
