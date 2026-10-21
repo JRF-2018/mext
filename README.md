@@ -45,7 +45,7 @@ Matcha の法的推論コードをデフォルト論理として読む道具一�
 pip install git+https://github.com/JRF-2018/mext
 ```
 
-`matcha-check` と `mext` のコマンドが入る（`python3 -m mext.matcha_check`、`python3 -m mext` でも呼べる）。
+`matcha-check` と `mext` のコマンドが入る（`python3 -m mext.matcha_check`、`python3 -m mext` でも呼べる）。pip が「externally-managed-environment」で入らない環境では、`python3 -m venv` で venv を作って入れるか、clone したディレクトリを `PYTHONPATH` に加えて `python3 -m mext` で動かす（依存ライブラリはない）。
 
 ### Claude Code のプラグイン（スキル 4 つ）
 

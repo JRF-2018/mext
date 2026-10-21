@@ -420,6 +420,19 @@ try:
 finally:
     shutil.rmtree(d)
 
+# --- 出典の引用が原文にあるか
+d = tempfile.mkdtemp()
+try:
+    open(os.path.join(d, 'src.md'), 'w', encoding='utf-8').write('第一段落。人目のない山道で、道に迷った人を助ける人もいる。\n\n第二段落。以上から結論を述べる。\n')
+    open(os.path.join(d, 'q.matcha'), 'w', encoding='utf-8').write(
+        '// 原文: src.md\n\n// 出典: 第1段落「人目のない山道で…助ける人もいる」\n#A <= 本件: (\n    %X <= 山道の例\n) >> 結論A as a\n\n'
+        '// 出典: 第2段落「以上から反対の結論を述べる」\n#B <= 本件: (\n    %Y <= 別の例\n) >> 結論B as b\n\n'
+        '// 出典: 第1段落「道に迷った人を助ける」。「例外にとどまる」は原文の評価を言い換えたもの。「」を『』に替えた\n#C <= 本件: (\n    %Z <= 例\n) >> 結論C as c\n')
+    miss = analysis.quote_misses(os.path.join(d, 'q.matcha'))
+    check('lint: 原文に見当たらない出典の引用（… で区切った引用は断片ごとに探す）', [m[0] for m in miss] == [8], str(miss))
+finally:
+    shutil.rmtree(d)
+
 # --- compare（読みの比較）
 from mext import compare
 cf = compare.CompareFile(os.path.join(TC, 'views.compare')).load()

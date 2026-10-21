@@ -12,6 +12,8 @@ description: 「読みの比較」。同じ文書を別々に書き起こした�
 ## 準備
 
 - `python3 -m mext --help` が動くかを確かめる。動かなければ `pip install git+https://github.com/JRF-2018/mext`。
+  - pip が externally-managed で入らなければ、`python3 -m venv` で venv を作って入れるか、clone したディレクトリを `PYTHONPATH` に加える。
+  - 文書の URL を WebFetch で取れない（http と https の転送が繰り返されるなど）ときは、`curl -L` で取る。
 - 読む: `references/comparing.md`（対応づけの考え方と、違いの分け方、レポートの章立て）。必要なら `../matcha-default-extensions/references/reading_results.md`（出力の読み方）。
 - 手元にこれらがない場合は、https://github.com/JRF-2018/mext の `skills/` を読む。
 - 引数は二つの `.mext`（解いたもの）。原文（`// 原文:` の行が指すファイル）と、それぞれのメモ（`X.matcha.md`）も読む。どちらの読みのファイルも書き換えない。

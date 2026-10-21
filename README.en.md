@@ -45,7 +45,7 @@ document ──(AI: matcha analysis)──▶ .matcha
 pip install git+https://github.com/JRF-2018/mext
 ```
 
-This installs the commands `matcha-check` and `mext` (also `python3 -m mext.matcha_check` and `python3 -m mext`).
+This installs the commands `matcha-check` and `mext` (also `python3 -m mext.matcha_check` and `python3 -m mext`). Where pip refuses with “externally-managed-environment”, create a venv with `python3 -m venv`, or add the cloned directory to `PYTHONPATH` and run `python3 -m mext` (there are no dependencies).
 
 ### Claude Code plugin (four skills)
 

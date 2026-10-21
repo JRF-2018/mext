@@ -1,6 +1,6 @@
 {
   "name": "mext",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "description": "Matcha（法的推論の形式言語）の論証をデフォルト論理として扱うスキル集 / Skills that read Matcha legal-reasoning code as default logic: mext-analysis (analyze the argument of any document), matcha-analysis (transcribe a document into Matcha), matcha-default-extensions (Extensions, verification, Lean proofs, reviews of applications), mext-compare (compare two readings of the same document)",
   "author": {
     "name": "JRF"

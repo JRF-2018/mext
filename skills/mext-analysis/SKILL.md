@@ -12,6 +12,8 @@ description: 「mext分析」。任意の文書（法律の文書に限らない
 ## 準備
 
 - `python3 -m mext --help` が動くかを確かめる。動かなければ `pip install git+https://github.com/JRF-2018/mext`（プラグインなら、このスキルの 2 つ上のディレクトリを `PYTHONPATH` に加えてもよい）。
+  - pip が externally-managed で入らなければ、`python3 -m venv` で venv を作って入れるか、clone したディレクトリを `PYTHONPATH` に加える。
+  - 文書の URL を WebFetch で取れない（http と https の転送が繰り返されるなど）ときは、`curl -L` で取る。
 - 参照する文書（必要なときに読む）:
   - `../matcha-analysis/SKILL.md`: 書き起こしの手順
   - `../matcha-default-extensions/references/ai_judgments.md`: `[ai]` の判断の書き方

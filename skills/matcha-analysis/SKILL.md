@@ -10,6 +10,8 @@ description: 「matcha分析」。任意の文書（法律の文書に限らな�
 ## 準備
 
 - `python3 -m mext.matcha_check --help` が動くかを確かめる。動かなければ `pip install git+https://github.com/JRF-2018/mext`。
+  - pip が externally-managed で入らなければ、`python3 -m venv` で venv を作って入れるか、clone したディレクトリを `PYTHONPATH` に加える。
+  - 文書の URL を WebFetch で取れない（http と https の転送が繰り返されるなど）ときは、`curl -L` で取る。
 - 書く前に読む:
   - `references/writing_matcha.md`: 文書を書き起こすときの考え方と型、よくある誤り
   - `../matcha-default-extensions/references/matcha_grammar.md`: 文法

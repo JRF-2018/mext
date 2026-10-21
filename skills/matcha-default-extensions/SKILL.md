@@ -10,6 +10,8 @@ description: Matcha / Matcha-D（法的推論の形式言語 Matcha に例外記
 ## 準備
 
 - `python3 -m mext --help` が動くかを確かめる。動かなければ `pip install git+https://github.com/JRF-2018/mext`（プラグインなら、このスキルの 2 つ上のディレクトリを `PYTHONPATH` に加えてもよい）。
+  - pip が externally-managed で入らなければ、`python3 -m venv` で venv を作って入れるか、clone したディレクトリを `PYTHONPATH` に加える。
+  - 文書の URL を WebFetch で取れない（http と https の転送が繰り返されるなど）ときは、`curl -L` で取る。
 - 参照する文書（`references/`）:
   - `matcha_grammar.md`: 文法
   - `mext.md`: MEXT の書式と**変換規則**（判断の前に §2 を一度読む）、各コマンドの説明

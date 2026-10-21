@@ -1086,7 +1086,8 @@ LINT_NAMES = _L({'同語反復の評価': ('同語反復の評価', 'tautologica
                  '一段の主張が多い': ('一段の主張が多い', 'many one-step claims'), '行き止まりの主張': ('行き止まりの主張', 'dead-end claims'),
                  'どの Extension にも出ない主張': ('どの Extension にも出ない主張', 'claim in no Extension'),
                  '報告型の結論': ('報告型の結論', 'reported views as conclusions'),
-                 '評価に依存する報告': ('評価に依存する報告', 'reports that depend on evaluations'), '効いていない判断': ('効いていない判断', 'ineffective judgment'),
+                 '評価に依存する報告': ('評価に依存する報告', 'reports that depend on evaluations'),
+                 '原文に見当たらない引用': ('原文に見当たらない引用', 'quotations not found in the source'), '効いていない判断': ('効いていない判断', 'ineffective judgment'),
                  '構文': ('構文', 'syntax')})
 
 
@@ -1221,8 +1222,63 @@ def lint(th, mf, exts=None, pref=None):
                             _t('主張 {n}（{c}）は、どの Extension にも含まれない。要件を満たす事実がないか、例外に打ち負かされている（mext explain で理由をたどれる）',
                                'claim {n} ({c}) is in no Extension: no fact satisfies its requirements, or an exception defeats it (see mext explain)',
                                n=name, c=th.lit_text(d.concl[0]))))
+    # 出典の引用が原文にあるか（// 原文: のファイルがあるときだけ。段落番号までは確かめない）
+    for f in th.files:
+        miss = quote_misses(f)
+        if miss:
+            out.append((I, _t('全体', 'whole') if loc else os.path.basename(f), '原文に見当たらない引用',
+                        _t('出典の注の引用 {n} か所が、原文のファイルに見当たらない（{x}）。引用を写し間違えたか、言い換えたか、別の箇所を指している。'
+                           '原文に照らして直す（言い換えなら引用の形にしない）',
+                           '{n} quotations in source notes are not found in the source file ({x}). They may be miscopied, paraphrased, or '
+                           'point elsewhere. Check against the source (do not put a paraphrase in quotation marks)',
+                           n=len(miss), x=join(f'L{ln}' + (f' {q(t[:24] + ("…" if len(t) > 24 else ""))}') for ln, t in miss[:6])
+                           + ('…' if len(miss) > 6 else ''))))
     for e in mf.errs:
         out.append((W, '[ai]', '効いていない判断', e))
+    return out
+
+
+SRC_DECL = re.compile(r'^\s*//\s*(?:原文|Source document|Source text|Source)\s*[:：]\s*(\S+?\.(?:md|txt|html?))\b', re.I)
+QUOTE_RE = re.compile(r'「((?:[^「」]|「[^「」]*」)*)」|“([^”]*)”|"([^"]*)"')
+QUOTE_NORM = re.compile(r'[\s　「」『』“”"\'‘’（）()、，,。．.・]')
+
+
+def quote_misses(path):
+    """// 出典: / // Source: の注にある引用のうち、// 原文: のファイルに見当たらないもの: [(行, 引用)]"""
+    import unicodedata
+    try:
+        lines = open(path, encoding='utf-8').read().splitlines()
+    except OSError:
+        return []
+    src = None
+    for ln in lines[:15]:
+        m = SRC_DECL.match(ln)
+        if m:
+            cand = os.path.join(os.path.dirname(os.path.abspath(path)), m.group(1))
+            if os.path.exists(cand):
+                src = cand
+                break
+    if not src:
+        return []
+    def norm(t):
+        return QUOTE_NORM.sub('', unicodedata.normalize('NFKC', t)).lower()
+    body = norm(open(src, encoding='utf-8', errors='replace').read())
+    out = []
+    for i, ln in enumerate(lines, 1):
+        t = ln.strip()
+        if not t.startswith('//') or not re.search(r'出典|source', t, re.I) or SRC_DECL.match(ln):
+            continue
+        # 引用として調べるのは、注の最初の文（最初の引用の後の「。」まで）だけ。後ろの説明文の「…」は、語の言及や言い換えのことがある
+        first = QUOTE_RE.search(t)
+        if first:
+            end = t.find('。', first.end())
+            t = t if end < 0 else t[:end]
+        for m in QUOTE_RE.finditer(t):
+            qt = next(g for g in m.groups() if g is not None)
+            frags = [norm(x) for x in re.split(r'…|\.\.\.|⋯|（略）|\(略\)', qt)]
+            frags = [x for x in frags if len(x) >= 4]
+            if frags and not all(x in body for x in frags):
+                out.append((i, qt))
     return out
 
 
