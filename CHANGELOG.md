@@ -1,5 +1,10 @@
 # 変更履歴（mext）
 
+- **0.7.0**（2026-10-23）: 最終監査と整理
+  - `mext lean --gamma`（Lean の中で Γ(E) を反復して計算し直す、0.5 までの方式）をやめた。証明書の方式（0.6.0）が、速さ（89 秒 → 11 秒）・メモリ・preferred の検査（0.6.1）のどれでも上回るため。出力する `.lean` の前置きから、旧方式の定義（sameSet、step、iter、gamma、isExtension）を外した。`lean/MextSpec.lean` の旧方式の検査器と健全性定理 `isExtension_sound` は、記録として残した（例に保存してある旧方式の `.lean` は、それぞれ単独で検査できる）。使われなくなった Python の `gamma()` も外した。
+  - 仕様書（docs/mext.md、docs/matcha_grammar.md と、スキルの references の写し）、手引き（writing_matcha.md）、README から、「（0.5.3 以降）」「以前は…」のような版の注記を外し、今の振る舞いだけを書くようにした（版の注記が仕様書だけで 25 か所あり、AI が毎回読む手引きに履歴が混ざっていた。履歴はこの CHANGELOG にある）。
+  - 使われない局所変数を片づけた。
+  - 点検したこと: トップレベルの未使用の関数・import はない。日本語・英語の全コマンド（summary、sensitivity、lint、connectives、audit、report、verify、diff、compare とそのひな形、lean、構文チェッカ、explain）が動き、英語の出力に日本語が混じらない。新しい venv への pip install、`lean/MextSpec.lean` の検査（Lean 4.35.0。Mathlib 不要）、`--import-spec` での健全性定理の適用が通る。例の結果は変わらない。
 - **0.6.11**（2026-10-23）
   - lint: `[extra]` の事実・規則・デフォルトが結論として与える要件を、「立証の手段のない要件」に数えないようにした（場合分けを `[extra]` の互いに否定し合うデフォルトで足した場合などに、解決済みの警告が audit の ✗ として残っていた）。
   - 構文チェッカ: `$ラベル@評価` のエラーに、参照には評価を付けられないことと、代わりの書き方を添えた。

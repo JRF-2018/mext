@@ -216,7 +216,6 @@ class Lexer:
                 continue
             # --- 「要件」（」の後の接尾テキスト「でない」等も拾う）と "要件"（英文のための別表記。入れ子はない）
             if expect_elem and ch in '「"':
-                close = '」' if ch == '「' else '"'
                 depth, j = 0, i
                 if ch == '"':
                     j = s.find('"', i + 1)

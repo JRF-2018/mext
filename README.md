@@ -87,7 +87,7 @@ claude plugin install mext@jrf-mext
 
 ### 英語での利用
 
-英語の文書を英語で頼めば、書き起こし・メモ・レポート・会話への返答は英語になる（例: [examples/analysis/car_free_op/](examples/analysis/car_free_op/)）。mext の出力（構文チェッカの診断、report、summary、sensitivity など）も、`--lang en` を付けるか環境変数 `MEXT_LANG=en` にすれば英語になる（0.4.0 以降。既定は日本語）。ロケール（`LANG` など）は見ない。AI のサンドボックスや Colab などでは、ロケールが利用者の言語を表さないことが多いためである。`[ai]` の語彙（`explicit`/`reading`、`description`/`assumption`/`verified`/`author-claim`）と優先順位の記法（`:: priority $a > $b`）も英語で書ける。英語の説明は [README.en.md](README.en.md)。
+英語の文書を英語で頼めば、書き起こし・メモ・レポート・会話への返答は英語になる（例: [examples/analysis/car_free_op/](examples/analysis/car_free_op/)）。mext の出力（構文チェッカの診断、report、summary、sensitivity など）も、`--lang en` を付けるか環境変数 `MEXT_LANG=en` にすれば英語になる（既定は日本語）。ロケール（`LANG` など）は見ない。AI のサンドボックスや Colab などでは、ロケールが利用者の言語を表さないことが多いためである。`[ai]` の語彙（`explicit`/`reading`、`description`/`assumption`/`verified`/`author-claim`）と優先順位の記法（`:: priority $a > $b`）も英語で書ける。英語の説明は [README.en.md](README.en.md)。
 
 ### AI に頼むとき
 
@@ -155,7 +155,7 @@ Claude Code では次のように使う。プラグインとして入れた場�
 
 `mext solve` の結果は、Reiter の Extension が 2 個、preferred Extension が 1 個（ペンギン例外が勝つ）になる。
 
-英文では、法文上の文言の要件「…」を `"public use"` のように ASCII の二重引用符でも書ける（Matcha-D、0.5.0 以降）。要素の先頭に置いたときだけ要件の記法になる。`.mext` の中では、`"` を含む文言を `'…'` で囲むか `\"` と書く。
+英文では、法文上の文言の要件「…」を `"public use"` のように ASCII の二重引用符でも書ける（Matcha-D）。要素の先頭に置いたときだけ要件の記法になる。`.mext` の中では、`"` を含む文言を `'…'` で囲むか `\"` と書く。
 
 ## 文書
 
@@ -164,11 +164,10 @@ Claude Code では次のように使う。プラグインとして入れた場�
 
 ## Lean
 
-- `mext lean` は、各 Extension E について、E の導出の列（証明書）と、`checkCert T E cert = true` を `decide +kernel` で示すファイルを出力する（0.6.0 以降）。Lean が確かめるのは、E が無矛盾であること、E が W を含み規則と正当化が E と無矛盾なデフォルトとで閉じていること、証明書の各段を W から順に使うと E が得られることである。
+- `mext lean` は、各 Extension E について、E の導出の列（証明書）と、`checkCert T E cert = true` を `decide +kernel` で示すファイルを出力する。Lean が確かめるのは、E が無矛盾であること、E が W を含み規則と正当化が E と無矛盾なデフォルトとで閉じていること、証明書の各段を W から順に使うと E が得られることである。
 - `lean/MextSpec.lean`（Mathlib 不要。Lean 4 だけで検査できる）には、この判定が Reiter の Extension の定義（E は無矛盾で、W を含み、規則と正当化が E と無矛盾なデフォルトとで閉じた最小の集合）を導く、という健全性定理 `Mext.checkCert_sound` がある。依存する公理は Lean の標準のもの（propext、Classical.choice、Quot.sound）だけである。
 - `mext lean --import-spec MODULE` とすると、その健全性定理を使って `Mext.ReiterExtension T E` まで示すファイルを出力する。
-- 0.5 までの、Lean の中で Γ(E) を計算し直す方式は `mext lean --gamma` で使える（健全性定理 `Mext.isExtension_sound`）。原子 約 210・規則 約 220・デフォルト 約 70 の理論で、Γ の方式は 89 秒・約 12 GB、証明書の方式は 11 秒・約 2.4 GB だった。
-- 優先順位のある理論では、preferred の Extension について、すべての生成デフォルトを優先の条件を満たす順に並べた証明書も出し、`checkPref` で確かめる（0.6.1 以降）。健全性定理 `Mext.checkPref_sound` で、E が Reiter の Extension であり、かつ優先順位を尊重して生成される（`Mext.PreferredGen`。docs/mext.md の preferred の定義をそのまま Prop にしたもの）ことが従う。優先順位の推移的な閉包は mext が渡すが、Lean はそれが元の優先順位を含み、推移的に閉じていることも確かめる。
+- 優先順位のある理論では、preferred の Extension について、すべての生成デフォルトを優先の条件を満たす順に並べた証明書も出し、`checkPref` で確かめる。健全性定理 `Mext.checkPref_sound` で、E が Reiter の Extension であり、かつ優先順位を尊重して生成される（`Mext.PreferredGen`。docs/mext.md の preferred の定義をそのまま Prop にしたもの）ことが従う。優先順位の推移的な閉包は mext が渡すが、Lean はそれが元の優先順位を含み、推移的に閉じていることも確かめる。
 - 示せるのは、列挙された各集合が Extension であること、preferred とされたものが preferred であること（健全性）である。列挙に漏れがないこと（完全性）と、preferred でないとされたものが本当に preferred でないことは、mext のアルゴリズムに依存する。
 
 ## テスト

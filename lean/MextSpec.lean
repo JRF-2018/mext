@@ -1,23 +1,24 @@
 /-
   MEXT の Lean 検査器の健全性（Mathlib を使わない。Lean 4 の標準のライブラリだけで検査できる）
 
-  mext の `lean` コマンドは、各 Extension E について、次のどちらかを出力する。
-  - 証明書による方式（0.6.0 以降の既定）:
+  mext の `lean` コマンドは、各 Extension E について、次を出力する（優先順位があれば、preferred の検査 checkPref も）。
+  - 証明書による方式:
       theorem : Mext.checkCert T E cert = true := by decide +kernel
     cert は mext が書き出す E の導出の列である。checkCert は、E が無矛盾であること、E が W を含み
     規則と「正当化が E と無矛盾なデフォルト」とで閉じていること、cert の各段を W から順に使うと
     E が得られることを Bool で確かめる。
-  - Γ を計算し直す方式（`mext lean --gamma`、0.5 までの方式）:
+  0.5 までの `mext lean` は、Γ を計算し直す方式を出力していた（例に保存してある .lean はこの方式で、それぞれ単独で検査できる）:
       theorem : Mext.isExtension T E = true := by decide +kernel
     isExtension は Γ(E) を有限回の反復（規則の数 + デフォルトの数 + 1 回）で計算し、E と比べる。
 
-  このファイルは、どちらの Bool の判定も、Reiter の Extension の Prop としての定義
+  このファイルは、どちらの Bool の判定も（preferred の判定 checkPref も）、Reiter の Extension の Prop としての定義
   （E は無矛盾で、W を含み、規則と「正当化が E と無矛盾なデフォルト」とで閉じた最小の集合である）
-  を導くこと（健全性: checkCert_sound と isExtension_sound）を示す。
+  を導くこと（健全性: checkCert_sound、isExtension_sound、checkPref_sound）を示す。
 
-  定義（Dflt, Theory, subsetL, sameSet, consistentL, okDefaults, step, iter, gamma, isExtension,
+  定義（Dflt, Theory, subsetL, consistentL, okDefaults,
   Step, stepConcl, runCert, closedB, checkCert, genB, rivalB, blockedB, runPref, dfltIdx, transClosedB, checkPref）は、
   mext/core.py の LEAN_PRELUDE と同じでなければならない（tests/run_tool_tests.py が確かめる）。
+  sameSet, step, iter, gamma, isExtension と isExtension_sound は 0.5 までの出力の検査器で、記録として残してある。
   preferred の仕様（Higher, RuleDerivable, Generating, Rival, conclOf, PreferredGen）と健全性定理 checkPref_sound は
   このファイルにだけある。
 -/

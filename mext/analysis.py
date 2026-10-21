@@ -1379,7 +1379,7 @@ def diff_md(pa, pb, ta, tb, mfa, mfb, kinds, sens=True):
     def keep(th, S):
         return {th.lit_text(l) for l in S if th.by_id[abs(l)].kind in kinds}
     A, B = keep(ta, ska), keep(tb, skb)
-    Ac, Bc = keep(ta, cra), keep(tb, crb)
+    Bc = keep(tb, crb)
     kname = _L({'concl': ('結論', 'conclusions'), 'claim': ('主張', 'claims'), 'req': ('要件', 'requirements'), 'eval': ('評価', 'evaluations')})
     out = [_t('# 版の差分: {a} → {b}', '# Differences between versions: {a} → {b}', a=os.path.basename(pa), b=os.path.basename(pb)), '',
            _t('（mext diff の出力。原子は番号ではなく文言で対応づけている。「成り立つ」は、すべての preferred Extension に含まれること）',
