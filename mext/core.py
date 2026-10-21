@@ -763,6 +763,72 @@ def closure(th, defaults, gate=None):
     return S, why
 
 
+def _rule_index(th):
+    """規則の前向き推論の索引（規則が変わらない限り使い回す）: (前提の数, リテラル -> 規則の位置, 前提のない規則の結論)"""
+    key = (id(th.rules), len(th.rules))
+    cache = getattr(th, '_rule_index_cache', None)
+    if cache is not None and cache[0] == key:
+        return cache[1]
+    need, watch, free = [], {}, []
+    for k, r in enumerate(th.rules):
+        bs = set(r.body)
+        need.append(len(bs))
+        if not bs:
+            free.append(r.head)
+        for b in bs:
+            watch.setdefault(b, []).append(k)
+    idx = (need, watch, free)
+    th._rule_index_cache = (key, idx)
+    return idx
+
+
+def fast_closure(th, defaults):
+    """closure と同じ集合を、前向き推論（前提ごとの残り数を数える）で線形時間で求める。導出の記録は作らない。
+    Extension の列挙と Γ(E) = E の判定に使う（explain は、導出の記録を残す closure を使う）"""
+    rneed, rwatch, rfree = _rule_index(th)
+    rneed = list(rneed)
+    heads = [r.head for r in th.rules]
+    dneed, dwatch, dfree = [], {}, []
+    for k, d in enumerate(defaults):
+        ps = set(d.pre)
+        dneed.append(len(ps))
+        if not ps:
+            dfree.append(k)
+        for p in ps:
+            dwatch.setdefault(p, []).append(k)
+    S, queue = set(), []
+    for l in list(th.W) + rfree + [c for k in dfree for c in defaults[k].concl]:
+        if l not in S:
+            S.add(l)
+            queue.append(l)
+    while queue:
+        l = queue.pop()
+        for k in rwatch.get(l, ()):
+            rneed[k] -= 1
+            if rneed[k] == 0:
+                h = heads[k]
+                if h not in S:
+                    S.add(h)
+                    queue.append(h)
+        for k in dwatch.get(l, ()):
+            dneed[k] -= 1
+            if dneed[k] == 0:
+                for h in defaults[k].concl:
+                    if h not in S:
+                        S.add(h)
+                        queue.append(h)
+    return S
+
+
+def gamma_set(th, E):
+    """Γ(E) の集合だけ（gamma と同じ値。導出の記録なし）"""
+    if E == INCONSISTENT:
+        S = fast_closure(th, [])
+        return S if consistent(S) else INCONSISTENT
+    S = fast_closure(th, [d for d in th.defaults.values() if all(-j not in E for j in d.just)])
+    return S if consistent(S) else INCONSISTENT
+
+
 def gamma(th, E):
     """Reiter の Γ(E): E に照らして正当化が無矛盾なデフォルトだけを使った最小の閉包"""
     if E == INCONSISTENT:
@@ -774,8 +840,7 @@ def gamma(th, E):
 
 
 def is_extension(th, E):
-    G, _ = gamma(th, E)
-    return G == E if E == INCONSISTENT or G == INCONSISTENT else G == E
+    return gamma_set(th, E) == E
 
 
 def generating(th, E):
@@ -787,19 +852,18 @@ def generating(th, E):
 
 def extensions(th, limit_conflicting=22):
     defs = list(th.defaults.values())
-    P, _ = closure(th, defs)            # 正当化を無視した、導出されうるリテラルの上界
+    P = fast_closure(th, defs)          # 正当化を無視した、導出されうるリテラルの上界
     conflicting = [d for d in defs if any(-j in P for j in d.just)]
     safe = [d for d in defs if d not in conflicting]
     if len(conflicting) > limit_conflicting:
         raise RuntimeError(_t('衝突しうるデフォルトが {n} 個あり、全列挙の上限を超えます', '{n} possibly conflicting defaults exceed the limit of full enumeration', n=len(conflicting)))
     found = []
-    base, _ = closure(th, [], None)
+    base = fast_closure(th, [])
     if not consistent(base):
         return [INCONSISTENT], conflicting
     for k in range(len(conflicting) + 1):
         for G in itertools.combinations(conflicting, k):
-            Gs = set(id(d) for d in G)
-            S, _ = closure(th, safe + list(G))
+            S = fast_closure(th, safe + list(G))
             if not consistent(S):
                 continue
             if S in found:

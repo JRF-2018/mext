@@ -569,6 +569,24 @@ try:
 finally:
     shutil.rmtree(d)
 
+# --- 前向き推論の閉包（fast_closure）が、導出の記録を残す closure と同じ集合になる
+rng = _random.Random(23)
+bad = 0
+for _ in range(400):
+    th = core.Theory()
+    atoms = [th.atom('extra', str(i)) for i in range(6)]
+    lits = atoms + [-a for a in atoms]
+    th.W = rng.sample(atoms, rng.randrange(3))
+    for j in range(7):
+        c = rng.choice(lits)
+        th.add_default(core.Default(str(j), rng.sample(lits, rng.randrange(3)), [c], [c] + rng.sample(lits, rng.randrange(2)), 'extra'))
+    for j in range(5):
+        th.add_rule(rng.sample(lits, rng.randrange(3)), rng.choice(lits))
+    ds = list(th.defaults.values())
+    sub = [d for d in ds if rng.random() < 0.6]
+    bad += core.fast_closure(th, sub) != core.closure(th, sub)[0]
+check('closure: 前向き推論の閉包が、もとの閉包と同じ集合になる（乱数の理論 400 個）', bad == 0, str(bad))
+
 # --- compare（読みの比較）
 from mext import compare
 cf = compare.CompareFile(os.path.join(TC, 'views.compare')).load()
