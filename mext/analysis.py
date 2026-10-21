@@ -789,12 +789,33 @@ def cmd_changed(args):
 # ---------------------------------------------------------------------------
 # 原文の出典と試算へのたどり
 # ---------------------------------------------------------------------------
-def source_note(th, line):
-    """.matcha の line 行の直前にある // 出典: コメント（単一ファイルの場合）"""
-    if len(th.files) != 1 or not isinstance(line, int) or line <= 0:
+def cand_file(th, c):
+    """候補の行がある .matcha（複数ファイルの理論で位置を示すため）。わからなければ None"""
+    if c.key[0] == 'd' and c.key[1] in th.defaults:
+        return getattr(th.defaults[c.key[1]], 'file', None)
+    if c.key[0] == 'a':
+        d = next((x for x in th.defaults.values() if x.kind == 'eval' and x.concl[0] == c.key[1]), None)
+        return getattr(d, 'file', None) if d else None
+    return None
+
+
+def where(th, line, file=None):
+    """行の位置の表示: 単一ファイルなら L12、複数ファイルなら post_2:L12"""
+    if len(th.files) > 1 and file:
+        return f'{os.path.splitext(os.path.basename(file))[0]}:L{line}'
+    return f'L{line}'
+
+
+def source_note(th, line, file=None):
+    """.matcha の line 行の直前にある // 出典: コメント（複数ファイルの理論では file を指定する）"""
+    if file is None:
+        if len(th.files) != 1:
+            return ''
+        file = th.files[0]
+    if not isinstance(line, int) or line <= 0:
         return ''
     try:
-        lines = open(th.files[0], encoding='utf-8').read().splitlines()
+        lines = open(file, encoding='utf-8').read().splitlines()
     except OSError:
         return ''
     for i in range(line - 2, max(-1, line - 8), -1):
@@ -967,8 +988,9 @@ def summary_md(th, mf, path):
         if d['g']:
             parts.append(_t('組の一員として {x} を支える（これ一つを外しても残る）', 'supports {x} as a member of a set (removing it alone leaves it)', x=names(d["g"])))
         c = cands[x]
-        nav = [f'L{c.line}'] if c.line else []
-        sn = source_note(th, c.line)
+        cf = cand_file(th, c)
+        nav = [where(th, c.line, cf)] if c.line else []
+        sn = source_note(th, c.line, cf)
         if sn:
             nav.append(sn)
         ai_ln = [i for i, ln in mf.ai_lines if core.mentions(ln, c.text)]
@@ -988,10 +1010,10 @@ def summary_md(th, mf, path):
     if apps:
         out += ['', _t('## 評価のないあてはめの審査（確定規則として読まれ、感度分析の候補にならない）',
                        '## Reviews of applications without an evaluation (read as strict rules; not candidates in the sensitivity analysis)'), '']
-        for key, line, st, note in apps:
-            sn = source_note(th, line)
+        for key, line, st, note, af in apps:
+            sn = source_note(th, line, af)
             out.append(f'- {q(key)} 〔{st}〕' + (_t(': AI の理由: {w}', ': AI’s reason: {w}', w=note) if note else '')
-                       + _t('（L{l}{s}）', ' (L{l}{s})', l=line, s=(' / ' + sn) if sn else ''))
+                       + _t('（{l}{s}）', ' ({l}{s})', l=where(th, line, af), s=(' / ' + sn) if sn else ''))
         out.append(_t('（doubtful でも推論は止まらない。争うなら、あてはめを `事実@評価` の形に書き直すと、感度分析で外せる）',
                       '(doubtful does not stop inference. To contest it, rewrite the application as `fact@evaluation` so that the sensitivity analysis can remove it)'))
     sj = shared_judgments(res)
@@ -1502,8 +1524,11 @@ def audit(path):
         rows.append(('ok' if ok is True else ('na' if ok is None else 'ng'), item, msg))
     # 書き起こしの記録と、その後の変更
     files = th.files
-    check = os.path.splitext(files[0])[0] + '.check.mext' if len(files) == 1 else None
-    if check and os.path.exists(check):
+    # 書き起こしの記録は X.check.mext。単一ファイルなら X.matcha から、複数ファイルの理論なら、この .mext の名前から探す
+    cands_check = ([os.path.splitext(files[0])[0] + '.check.mext'] if len(files) == 1 else []) + \
+        ([base + '.check.mext'] if not base.endswith('.check') else [path])
+    check = next((c for c in cands_check if os.path.exists(c)), None)
+    if check:
         cmf = core.MextFile(check).load()
         if not cmf.sources:
             add(False, _t('書き起こしの記録', 'transcription record'),

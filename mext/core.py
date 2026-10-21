@@ -81,7 +81,7 @@ class Theory:
         self.aliases = {}      # 別名（ラベル・元の文言・neg/same 前の文言）-> リテラルの集合
         self.rejected = set()  # AI の審査で棄却された評価の原子
         self.eval_status = {}  # 評価の文言 -> 実際に効いた review（ok / doubtful / reject / None）
-        self.app_status = []   # 評価のないあてはめ（確定規則として読まれる）: (要件の文言, 行, review か None, 注)
+        self.app_status = []   # 評価のないあてはめ（確定規則として読まれる）: (要件の文言, 行, review か None, 注, ファイル)
         self.notes = []
 
     def alias(self, text, l):
@@ -313,6 +313,7 @@ class Compiler:
 
     def __init__(self, ai):
         self.prefix = ''          # 複数ファイルのとき「ファイル名:」
+        self.file = None          # いま変換しているファイル
         self.th = Theory()
         self.ai = ai
         self.n_eval = 0
@@ -553,7 +554,7 @@ class Compiler:
         if n.facts is not None:
             target = -r if m == '!' else r
             if not has_eval(n.facts):
-                self.th.app_status.append((key, n.line, review[0] if review else None, review[1] if review else ''))
+                self.th.app_status.append((key, n.line, review[0] if review else None, review[1] if review else '', self.file))
             l = self.facts(n.facts, target)
             if l and review and review[0] == 'reject':
                 self.th.notes.append(_t('AI の審査で棄却されたあてはめ: {k} <= {f}', 'application rejected by the AI review: {k} <= {f}',
@@ -1142,8 +1143,12 @@ def build_from_docs(mf, ai, files, docs):
     comp = Compiler(ai)
     for f, doc in zip(files, docs):
         comp.prefix = os.path.splitext(os.path.basename(f))[0] if len(files) > 1 else ''
+        comp.file = f
+        before = set(comp.th.defaults)
         for n in doc.items:
             comp.top(n)
+        for name in set(comp.th.defaults) - before:
+            comp.th.defaults[name].file = f      # どのファイルの行か（複数ファイルの理論で位置を示すため）
     th = comp.finish()
     extra = []
     for i, ln in mf.extra_lines:

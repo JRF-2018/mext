@@ -587,6 +587,25 @@ for _ in range(400):
     bad += core.fast_closure(th, sub) != core.closure(th, sub)[0]
 check('closure: 前向き推論の閉包が、もとの閉包と同じ集合になる（乱数の理論 400 個）', bad == 0, str(bad))
 
+# --- 複数ファイルの理論: 位置の表示と、書き起こしの記録
+d = tempfile.mkdtemp()
+try:
+    open(os.path.join(d, 'a.md'), 'w', encoding='utf-8').write('甲は乙である。\n')
+    open(os.path.join(d, 'a.matcha'), 'w', encoding='utf-8').write(
+        '// 原文: a.md\n\n// 出典: 第1段落「甲は乙である」\n#前提 <= 本件: (\n    %乙である <= 甲の事実@甲は乙と評価できる\n) >> 甲は乙である as 前提\n')
+    open(os.path.join(d, 'b.matcha'), 'w', encoding='utf-8').write(
+        '#結論 <= 本件: (\n    $前提\n    %丙である <= 丙の事実@丙は丙と評価できる\n) >> 甲は丙でもある as 結論\n')
+    with contextlib.redirect_stdout(io.StringIO()):
+        core.main(['init', '--solve', os.path.join(d, 'a.matcha'), os.path.join(d, 'b.matcha'), '-o', os.path.join(d, 'ab.mext')])
+        core.main(['init', '--solve', os.path.join(d, 'a.matcha'), os.path.join(d, 'b.matcha'), '-o', os.path.join(d, 'ab.check.mext')])
+    mf, th, _ = analysis.load(os.path.join(d, 'ab.mext'))
+    md = analysis.summary_md(th, mf, os.path.join(d, 'ab.mext'))
+    check('複数ファイル: 争点の位置にファイル名を付け、出典の注を引く', 'a:L5 / 出典: 第1段落' in md and 'b:L3' in md, md[-900:])
+    rows = analysis.audit(os.path.join(d, 'ab.mext'))
+    check('複数ファイル: audit が X.check.mext（理論の名前）を見つける', any('書き起こしの後の変更' in r[1] for r in rows), str(rows[:3]))
+finally:
+    shutil.rmtree(d)
+
 # --- compare（読みの比較）
 from mext import compare
 cf = compare.CompareFile(os.path.join(TC, 'views.compare')).load()
