@@ -3,12 +3,12 @@
   "owner": {
     "name": "JRF"
   },
-  "description": "JRF のプラグイン: Matcha の論証をデフォルト論理として検査する mext",
+  "description": "JRF のプラグイン: AI による論証の読みを監査できる形にする mext",
   "plugins": [
     {
       "name": "mext",
       "source": "./",
-      "description": "Matcha の論証をデフォルト論理として検査するスキル集（mext-analysis、matcha-analysis、matcha-default-extensions、mext-compare）"
+      "description": "AI による論証の読みを、人が監査できる形にするスキル集（mext-analysis、matcha-analysis、matcha-default-extensions、mext-compare）"
     }
   ]
 }

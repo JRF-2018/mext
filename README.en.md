@@ -1,6 +1,8 @@
 # mext
 
-Read legal-reasoning code written in **Matcha** as **default logic**: a syntax checker, a solver for Reiter and prioritized Extensions with Lean certificates, and Claude Code skills that analyze the argument of any document ("mext analysis" and "matcha analysis").
+**A tool that makes an AI's reading of an argument auditable by people.** An AI transcribes the argument of a document (an op-ed, a judgment, a contract, an essay, a blog post, …) into **Matcha**, a formal language for legal reasoning, and mext computes it deterministically as **default logic**. Every interpretive judgment of the AI is recorded with its reason, and every mechanical step can be traced by a person.
+
+It consists of a Matcha syntax checker, a solver and verifier for Reiter and prioritized Extensions with Lean proofs, analysis commands (sensitivity analysis, comparison of readings, …), and Claude Code skills ("mext analysis" and "matcha analysis" for the argument of any document, "mext-compare" for comparing readings, …).
 
 *日本語: [README.md](README.md)*
 
@@ -8,6 +10,18 @@ Read legal-reasoning code written in **Matcha** as **default logic**: a syntax c
 > - [Matcha](https://www.elecode.jp/matcha) is a formal language for legal reasoning by Taketsugu Hanafusa (花房孟胤). This repository implements its grammar as read from published examples (there is no official BNF).
 > - The exception notation **Matcha-D (`!>`, `>> not` / `>> !`, `:: 優先` / `:: priority`, naming claims with `as`, and `"requirement"` as an ASCII spelling of 「requirement」) is an unofficial extension, unrelated to Elecode or Mr. Hanafusa.**
 > - Naming with `as`, references with `$`, headings `::` and comments `//` follow examples in Mr. Hanafusa's articles (see [docs/matcha_grammar.md](docs/matcha_grammar.md) §1 and §5, in Japanese).
+
+## Why mext
+
+Ask an AI whether the argument of a document is sound and you get a plausible answer. What that answer depends on — which reading, which judgments — is invisible in the prose. mext splits an AI's analysis into units that people can question.
+
+- **AI judgments in the open**: each line of the transcription cites the source (a quotation). Supplied premises, omissions, and whether each AND / OR is explicit in the source or a reading are recorded. Reviews of "fact@evaluation" steps (ok / doubtful / reject) and judgments of identity and negation all go, with reasons, into the `[ai]` section of the `.mext` file.
+- **Mechanical steps people can follow**: the translation from Matcha into a default theory and the computation and verification of Extensions are deterministic: the same input gives the same result. `explain` traces which rules and evaluations a conclusion comes from, and Lean checks the computation itself. This traceability is the point of formalization.
+- **Dependencies computed, not asserted**: the sensitivity analysis shows which evaluations or supplied premises a conclusion falls with. Every summary also states the scope of verification — conclusions with no opposing proposition, unreviewed or doubtful evaluations, connectives that decide a conclusion — so that results are not read too strongly.
+- **Readings compared**: two transcriptions of the same document by different AIs or people are set side by side, separating weaknesses common to both (likely points of contention in the source's argument) from results that appear in one reading only (likely consequences of a transcription choice).
+- **Procedure checked**: `mext audit` lists gaps in the records (sources, memo, prior predictions, reviews), and `mext lint` flags coarse transcription (tautological evaluations, quotations not found in the source, …).
+
+mext does not judge whether an argument is *true*. It shows what follows within the transcribed theory and what that depends on, and points to where one should go back to the source. It has been tried with Claude (Opus, Sonnet, Haiku) and Codex (GPT-6.1-Sol); some of the runs are in [examples/analysis/](examples/analysis/).
 
 ## What it does
 

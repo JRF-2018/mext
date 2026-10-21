@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mext"
-version = "0.5.6"
-description = "Read Matcha legal-reasoning code as default logic: syntax checker, Reiter/prioritized extension solver with Lean certificates, sensitivity analysis, and comparison of readings"
+version = "0.5.7"
+description = "Make an AI's reading of an argument auditable: transcribe it into Matcha and compute it as default logic (syntax checker, Reiter/prioritized Extensions with Lean proofs, sensitivity analysis, comparison of readings)"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "JRF" }]

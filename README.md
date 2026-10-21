@@ -1,13 +1,27 @@
 # mext
 
-Matcha の法的推論コードをデフォルト論理として読む道具一式。内容は、構文チェッカ、Reiter／優先度付き Extension の計算・検証（Lean 証明つき）、Claude Code スキル（任意の文書の論証を分析する「mext分析」「matcha分析」を含む）。
+**AI が文書の論証を読んだ結果を、人が監査できる形にする道具。** AI は、文書（論説・判決・契約・評論・ブログなど）の論証を、法的推論の形式言語 Matcha に書き起こす。mext はそれをデフォルト論理として決定論的に計算する。AI の解釈はすべて理由つきでファイルに残り、機械「的」に変換された部分は人がたどれる。
 
-*Read Matcha legal-reasoning code as default logic: a syntax checker, a Reiter/prioritized extension solver with Lean certificates, and Claude Code skills for neuro-symbolic argument review of any document.* **English: [README.en.md](README.en.md)**
+内容は、Matcha の構文チェッカ、Reiter／優先度付き Extension の計算・検証（Lean 証明つき）、感度分析・読みの比較などの分析コマンド、そして Claude Code スキル（任意の文書の論証を分析する「mext分析」「matcha分析」、読みを比べる「mext-compare」など）。
+
+*mext makes an AI's reading of an argument auditable: the AI transcribes the argument of any document into the legal-reasoning language Matcha, and mext computes it deterministically as default logic, so that every interpretive judgment is recorded with its reason and every mechanical step can be traced.* **English: [README.en.md](README.en.md)**
 
 > **注意**
 > - [Matcha](https://www.elecode.jp/matcha) は花房孟胤氏による法的推論の形式言語である。本リポジトリはその文法を、公開されている用例から読み取って実装したものである。
 > - 本リポジトリの例外記法 **Matcha-D（`!>` / `>> not`・`>> !` / `:: 優先`、主張への `as` 名前付け、英文のための `"要件"`）は非公式の拡張で、Elecode／花房氏とは無関係である**。
 > - 名前付けの `as`・参照の `$`・見出しの `::`・コメントの `//` は、花房氏の連載の用例にあるものを使っている（詳しくは [docs/matcha_grammar.md](docs/matcha_grammar.md) §1・§5）。
+
+## なぜ mext か
+
+AI に「この文書の論証は正しいか」と聞けば、もっともらしい答えが返ってくる。けれども、その答えがどの読みと、どの判断に依存しているかは、文章からは見えない。mext は AI の分析を、人が疑える単位に分ける。
+
+- **AI の判断を表に出す**: 書き起こしの各行に、原文の出典（引用）を付ける。補った前提、落としたもの、結び方（AND / OR）が原文に明示されているか読みかを記録する。「事実@評価」の評価の審査（ok / doubtful / reject）、命題の同一・否定などの判断は、すべて `.mext` の `[ai]` に理由つきで書く。
+- **機械「的」な部分を人が追える**: Matcha からデフォルト理論への変換、Extension の計算と検証は決定論的で、同じ入力からは同じ結果が出る。どの結論がどの規則と評価から導かれたかを `explain` でたどれ、計算そのものは Lean で検査できる。形式化の意義は、この部分を人が追いやすいことにある。
+- **何に依存しているかを計算で示す**: 感度分析は、どの評価や補った前提を外すと結論が崩れるかを示す。あわせて、対立する命題のない結論の数、未審査や doubtful の評価の数、結論を左右する結び方など、「結果を強く読みすぎない」ための検証の範囲を必ず出す。
+- **読みどうしを比べる**: 同じ文書を別々の AI や人が書き起こした読みを突き合わせ、両方に共通する弱点（原文の論証の争点の候補）と、一方の読みでしか現れない結果（書き起こしの選択の結果）を分ける。
+- **手順を点検する**: `mext audit` が、出典・メモ・事前の予測・審査などの記録の抜けを一覧にし、`mext lint` が書き起こしの粗さ（同語反復の評価、原文に見当たらない引用など）を知らせる。
+
+mext は論証の「正しさ」を判定しない。示すのは、書き起こした理論の中で何が導け、それが何に依存しているかであり、そのうえで原文に戻るべき箇所を指す。Claude（Opus・Sonnet・Haiku）と Codex（GPT-6.1-Sol）で試してきた。試験の記録の一部は [examples/analysis/](examples/analysis/) にある。
 
 ## 何をするか
 
