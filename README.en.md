@@ -161,9 +161,11 @@ Pitfalls in English text: a line ending in "… as drivers" is read as a label (
 
 ## Lean
 
-- `mext lean` writes, for each Extension E, a proof by `decide +kernel` that `isExtension T E = true`, where the checker computes Γ(E).
-- `lean/MextSpec.lean` (uses Mathlib) proves the soundness theorem `Mext.isExtension_sound`: the Boolean check implies Reiter's definition of an Extension (E is consistent, contains W, and is the least set closed under the rules and the defaults whose justifications are consistent with E).
+- `mext lean` writes, for each Extension E, a derivation of E (a certificate) and a proof by `decide +kernel` that `checkCert T E cert = true` (since 0.6.0). Lean checks that E is consistent, that E contains W and is closed under the rules and the defaults whose justifications are consistent with E, and that using the steps of the certificate in order from W yields E.
+- `lean/MextSpec.lean` (no Mathlib needed; plain Lean 4) proves the soundness theorem `Mext.checkCert_sound`: the check implies Reiter's definition of an Extension (E is consistent, contains W, and is the least set closed under the rules and the defaults whose justifications are consistent with E). It depends only on Lean's standard axioms (propext, Classical.choice, Quot.sound).
 - `mext lean --import-spec MODULE` writes proofs that go on to `Mext.ReiterExtension T E` via the soundness theorem.
+- The method up to 0.5, which recomputes Γ(E) inside Lean, is available as `mext lean --gamma` (soundness theorem `Mext.isExtension_sound`). On a theory with about 210 atoms, 220 rules and 70 defaults, it took 89 s and about 12 GB; the certificate method took 11 s and about 2.4 GB.
+- What this shows is that each enumerated set is an Extension (soundness). That the enumeration is complete, and which Extensions are preferred, rest on mext's algorithms.
 
 ## Tests
 

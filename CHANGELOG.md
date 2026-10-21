@@ -1,5 +1,12 @@
 # 変更履歴（mext）
 
+- **0.6.0**（2026-10-22）
+  - Lean の出力を、証明書による検査に改めた。`mext lean` は各 Extension E の導出の列（証明書）を書き出し、Lean は `checkCert T E cert = true` を `decide +kernel` で確かめる。確かめるのは、E が無矛盾であること、E が W を含み規則と正当化が E と無矛盾なデフォルトとで閉じていること（Γ(E) ⊆ E）、証明書の各段を W から順に使うと E が得られること（E ⊆ Γ(E)）である。健全性定理 `Mext.checkCert_sound`（`lean/MextSpec.lean`）で、`Mext.ReiterExtension T E` が従う。証明は Claude Sonnet のサブエージェントが書き、Claude Opus が検査した（定義と定理の主張は変えていないこと、`sorry` がないこと、依存する公理が標準の 3 つであること）。
+  - 速さ: 原子 約 210・規則 約 220・デフォルト 約 70 の理論（compare_material の tmp8）で、Γ を計算し直す方式は 89 秒・約 12 GB、証明書の方式は 11 秒・約 2.4 GB。`--import-spec` で健全性定理まで通しても 10 秒・約 2.4 GB。
+  - `lean/MextSpec.lean` を Mathlib なしで検査できるようにした（`by_contra` を `cases` に替え、Mathlib の linter の設定を外した）。Lean 4 だけで、健全性定理まで確かめられる（Lean 4.34.1 と 4.35.0 で確認）。以前は Mathlib の import だけで 6 GB 以上を使い、大きな理論では `def T` の要素の解釈が既定の heartbeats を超えていた。
+  - 0.5 までの方式は `mext lean --gamma` で使える。健全性定理 `Mext.isExtension_sound` はそのまま残した。
+  - テスト: 例のすべての Extension の証明書が checkCert の条件を満たすこと（Python で写した検査）、出力の検査器の定義が `lean/MextSpec.lean` と同じであること。
+  - 既存の例の `.lean` ファイルは作り直していない（0.5 までの方式のまま。それぞれ単独で検査できる）。
 - **0.5.7**（2026-10-22）
   - README（日本語・英語）の冒頭を書き直した。mext を「AI が文書の論証を読んだ結果を、人が監査できる形にする道具」として紹介し、「なぜ mext か」の節（AI の判断を表に出す、機械「的」な部分を人が追える、依存を計算で示す、読みを比べる、手順を点検する）を置いた。プラグインと pyproject の説明もこれに合わせた。コードの変更はない。
 - **0.5.6**（2026-10-22）

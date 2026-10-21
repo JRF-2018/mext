@@ -164,9 +164,11 @@ Claude Code では次のように使う。プラグインとして入れた場�
 
 ## Lean
 
-- `mext lean` は、各 Extension E について、Γ(E) を計算する関数で `isExtension T E = true` を `decide +kernel` で示すファイルを出力する。
-- `lean/MextSpec.lean`（Mathlib を使う）には、その Bool の判定が Reiter の Extension の定義（E は無矛盾で、W を含み、規則と正当化が E と無矛盾なデフォルトとで閉じた最小の集合）を導く、という健全性定理 `Mext.isExtension_sound` がある。
+- `mext lean` は、各 Extension E について、E の導出の列（証明書）と、`checkCert T E cert = true` を `decide +kernel` で示すファイルを出力する（0.6.0 以降）。Lean が確かめるのは、E が無矛盾であること、E が W を含み規則と正当化が E と無矛盾なデフォルトとで閉じていること、証明書の各段を W から順に使うと E が得られることである。
+- `lean/MextSpec.lean`（Mathlib 不要。Lean 4 だけで検査できる）には、この判定が Reiter の Extension の定義（E は無矛盾で、W を含み、規則と正当化が E と無矛盾なデフォルトとで閉じた最小の集合）を導く、という健全性定理 `Mext.checkCert_sound` がある。依存する公理は Lean の標準のもの（propext、Classical.choice、Quot.sound）だけである。
 - `mext lean --import-spec MODULE` とすると、その健全性定理を使って `Mext.ReiterExtension T E` まで示すファイルを出力する。
+- 0.5 までの、Lean の中で Γ(E) を計算し直す方式は `mext lean --gamma` で使える（健全性定理 `Mext.isExtension_sound`）。原子 約 210・規則 約 220・デフォルト 約 70 の理論で、Γ の方式は 89 秒・約 12 GB、証明書の方式は 11 秒・約 2.4 GB だった。
+- 示せるのは、列挙された各集合が Extension であること（健全性）である。列挙に漏れがないこと（完全性）と、preferred であることは、mext のアルゴリズムに依存する。
 
 ## テスト
 

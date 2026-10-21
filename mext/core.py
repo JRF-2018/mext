@@ -1583,7 +1583,8 @@ def cmd_lean(args):
     th, _ = build(mf)
     exts, pref, _ = solve(th)
     ns = args.namespace or re.sub(r'\W', '_', os.path.splitext(os.path.basename(args.file))[0]).capitalize()
-    src = lean_source(th, exts, ns, os.path.basename(args.file), import_spec=args.import_spec)
+    src = lean_source(th, exts, ns, os.path.basename(args.file), import_spec=args.import_spec,
+                      method='gamma' if getattr(args, 'gamma', False) else 'cert')
     out = args.output or os.path.splitext(args.file)[0] + '.lean'
     with open(out, 'w', encoding='utf-8') as f:
         f.write(src)
@@ -1635,6 +1636,44 @@ def gamma (T : Theory) (E : List Int) : List Int :=
 def isExtension (T : Theory) (E : List Int) : Bool :=
   consistentL E && sameSet (gamma T E) E
 
+/-- {c_step_t} -/
+inductive Step where
+  | rule (i : Nat)
+  | dflt (i : Nat)
+deriving Repr
+
+/-- {c_sc} -/
+def stepConcl (T : Theory) (E : List Int) (S : List Int) : Step → Option (List Int)
+  | .rule i =>
+    match T.rules[i]? with
+    | some r => if subsetL r.1 S then some [r.2] else none
+    | none => none
+  | .dflt i =>
+    match T.defaults[i]? with
+    | some d => if subsetL d.pre S && d.just.all (fun j => !E.contains (-j)) then some d.concl else none
+    | none => none
+
+/-- {c_run} -/
+def runCert (T : Theory) (E : List Int) : List Step → List Int → Option (List Int)
+  | [], S => some S
+  | s :: ss, S =>
+    match stepConcl T E S s with
+    | some c => runCert T E ss (S ++ c)
+    | none => none
+
+/-- {c_closed} -/
+def closedB (T : Theory) (E : List Int) : Bool :=
+  subsetL T.W E &&
+  T.rules.all (fun r => !subsetL r.1 E || E.contains r.2) &&
+  (okDefaults T E).all (fun d => !subsetL d.pre E || subsetL d.concl E)
+
+/-- {c_cert} -/
+def checkCert (T : Theory) (E : List Int) (cert : List Step) : Bool :=
+  consistentL E && closedB T E &&
+  match runCert T E cert T.W with
+  | some S => subsetL E S
+  | none => false
+
 end Mext
 '''
 
@@ -1653,6 +1692,12 @@ def lean_prelude():
         'c_gamma': _t('Γ(E)（反復回数は規則とデフォルトの数 + 1 で十分）',
                       'Γ(E) (the number of rules and defaults + 1 iterations suffice)'),
         'c_ext': _t('E は Extension か（無矛盾で、Γ(E) = E）', 'whether E is an Extension (consistent, and Γ(E) = E)'),
+        'c_step_t': _t('証明書の一段: 規則 i か、デフォルト i を使う', 'one step of a certificate: use rule i or default i'),
+        'c_sc': _t('一段を集合 S で使えるなら、加わるリテラルを返す', 'the literals a step adds, if it can be used at S'),
+        'c_run': _t('証明書の各段を順に使い、最後に得られた集合を返す', 'use the steps of a certificate in order and return the resulting set'),
+        'c_closed': _t('E が W を含み、規則と、正当化が E と無矛盾なデフォルトについて閉じている',
+                       'E contains W and is closed under the rules and the defaults whose justifications are consistent with E'),
+        'c_cert': _t('証明書による Extension の検査（無矛盾・閉包・導出）', 'checking an Extension with a certificate (consistency, closure, derivation)'),
     }
     out = LEAN_PRELUDE
     for k, v in c.items():
@@ -1660,7 +1705,32 @@ def lean_prelude():
     return out
 
 
-def lean_source(th, exts, ns, fname, import_spec=False):
+def lean_certificate(th, E):
+    """E の導出の列: W から始めて、前提の満たされた規則と、正当化が E と無矛盾なデフォルトを、
+    新しいリテラルを加えるものだけ順に使う。[('rule'|'dflt', 位置)]"""
+    ds = list(th.defaults.values())
+    ok = [k for k, d in enumerate(ds) if all(-j not in E for j in d.just)]
+    S, steps = set(th.W), []
+    changed = True
+    while changed and not E <= S:
+        changed = False
+        for k, r in enumerate(th.rules):
+            if r.head not in S and all(b in S for b in r.body):
+                steps.append(('rule', k))
+                S.add(r.head)
+                changed = True
+        for k in ok:
+            d = ds[k]
+            if all(p in S for p in d.pre) and any(c not in S for c in d.concl):
+                steps.append(('dflt', k))
+                S |= set(d.concl)
+                changed = True
+    if not E <= S:
+        raise ValueError(_t('E を W から導けません（Extension ではない）', 'E cannot be derived from W (not an Extension)'))
+    return steps
+
+
+def lean_source(th, exts, ns, fname, import_spec=False, method='cert'):
     def ll(ls):
         return '[' + ', '.join(str(x) for x in ls) + ']'
     head = (f'import {import_spec}\n\n/- ' + _t('MEXT の Extension 検証（mext が自動生成）。検査器と健全性定理は {m} にある。',
@@ -1687,11 +1757,19 @@ def lean_source(th, exts, ns, fname, import_spec=False):
             continue
         lst = sorted(E, key=lambda l: (abs(l), l < 0))
         lines.append(f'def E{i} : List Int := {ll(lst)}')
-        lines.append(f'theorem E{i}_isExtension : Mext.isExtension T E{i} = true := by decide +kernel')
+        if method == 'gamma':
+            lines.append(f'theorem E{i}_isExtension : Mext.isExtension T E{i} = true := by decide +kernel')
+            proof = f'Mext.isExtension_sound T E{i} E{i}_isExtension'
+        else:
+            steps = lean_certificate(th, E)
+            lines.append('/-- ' + _t('E{i} の導出の列（証明書）', 'derivation of E{i} (certificate)', i=i) + ' -/')
+            lines.append(f'def E{i}_cert : List Mext.Step := [' + ', '.join(f'.{k} {n}' for k, n in steps) + ']')
+            lines.append(f'theorem E{i}_checked : Mext.checkCert T E{i} E{i}_cert = true := by decide +kernel')
+            proof = f'Mext.checkCert_sound T E{i} E{i}_cert E{i}_checked'
         if import_spec:
             lines.append('/-- ' + _t('E{i} は Reiter の Extension である（健全性定理による）',
                                      'E{i} is a Reiter Extension (by the soundness theorem)', i=i) + ' -/')
-            lines.append(f'theorem E{i}_reiter : Mext.ReiterExtension T E{i} := Mext.isExtension_sound T E{i} E{i}_isExtension')
+            lines.append(f'theorem E{i}_reiter : Mext.ReiterExtension T E{i} := {proof}')
         lines.append('')
     lines.append(f'end Mext.{ns}')
     return '\n'.join(lines) + '\n'
@@ -1728,6 +1806,8 @@ def main(argv=None):
                         'lean/MextSpec.lean）を import し、ReiterExtension も示す')
     p.add_argument('-o', '--output')
     p.add_argument('--namespace')
+    p.add_argument('--gamma', action='store_true',
+                   help='証明書を使わず、Lean の中で Γ(E) を反復して計算し直す（0.5 までの方式。遅い） / recompute Γ(E) in Lean (the method up to 0.5; slow)')
     try:
         from . import analysis, compare
     except ImportError:          # パッケージとしてではなく直接実行された場合

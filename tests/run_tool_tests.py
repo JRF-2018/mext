@@ -433,6 +433,70 @@ try:
 finally:
     shutil.rmtree(d)
 
+# --- Lean: 証明書（mext lean の既定）
+import glob as _glob
+
+
+def check_cert_py(th, E, steps):
+    """Lean の checkCert を Python で写したもの"""
+    ds = list(th.defaults.values())
+    ok = [d for d in ds if all(-j not in E for j in d.just)]
+    if any(-x in E for x in E):
+        return False
+    if not set(th.W) <= E or any(set(r.body) <= E and r.head not in E for r in th.rules) \
+            or any(set(d.pre) <= E and not set(d.concl) <= E for d in ok):
+        return False
+    S = set(th.W)
+    for k, n in steps:
+        if k == 'rule':
+            r = th.rules[n]
+            if not set(r.body) <= S:
+                return False
+            S.add(r.head)
+        else:
+            d = ds[n]
+            if not set(d.pre) <= S or any(-j in E for j in d.just):
+                return False
+            S |= set(d.concl)
+    return E <= S
+
+
+n_ok = n_all = 0
+for f in sorted(_glob.glob(os.path.join(EX, '**', '*.mext'), recursive=True)):
+    th = theory(f)
+    exts, _, _ = core.solve(th)
+    for E in exts:
+        if E == core.INCONSISTENT:
+            continue
+        n_all += 1
+        n_ok += check_cert_py(th, set(E), core.lean_certificate(th, set(E)))
+check(f'lean: 例のすべての Extension の証明書が、checkCert の条件を満たす（{n_ok}/{n_all}）', n_ok == n_all and n_all > 0)
+
+
+def lean_defs(text):
+    """def / inductive / structure の定義の本体（コメントと空行を除く）"""
+    text = re.sub(r'/-.*?-/', '', text, flags=re.S)
+    text = re.sub(r'--[^\n]*', '', text)
+    out, cur = {}, None
+    for ln in text.splitlines():
+        m = re.match(r'^(def|inductive|structure) (\w+)', ln)
+        if m:
+            cur = m.group(2)
+            out[cur] = [ln.rstrip()]
+        elif cur and ln.strip() and (ln.startswith(' ') or ln.startswith('deriving') or ln.startswith('  |')):
+            out[cur].append(ln.rstrip())
+        else:
+            cur = None
+    return {k: '\n'.join(v) for k, v in out.items()}
+
+
+spec = lean_defs(open(os.path.join(HERE, '..', 'lean', 'MextSpec.lean'), encoding='utf-8').read())
+prel = lean_defs(core.lean_prelude())
+check('lean: 出力の検査器の定義が lean/MextSpec.lean と同じ', set(prel) <= set(spec) and all(prel[k] == spec[k] for k in prel),
+      str([k for k in prel if prel.get(k) != spec.get(k)]))
+check('lean: 出力の既定は証明書による検査', 'Mext.checkCert T E1 E1_cert = true' in core.lean_source(theory(os.path.join(EX, 'tweety.mext')),
+      core.solve(theory(os.path.join(EX, 'tweety.mext')))[0], 'Tweety', 'tweety.mext'))
+
 # --- compare（読みの比較）
 from mext import compare
 cf = compare.CompareFile(os.path.join(TC, 'views.compare')).load()

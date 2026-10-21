@@ -130,7 +130,8 @@ mext verify     X.mext [--skeptical] # [claimed] を検証（既定は信憑的:
                                     #   --skeptical: すべての Extension で成り立つ）
 mext report     X.mext              # Markdown の表
 mext explain    X.mext E1 "文言"     # 導出のすべての根拠。含まれない場合は含まれない理由（否定は ¬文言）
-mext lean       X.mext              # 各 Extension が Γ(E)=E を満たすことの Lean 証明
+mext lean       X.mext [--import-spec [MODULE]] [--gamma]
+                                    # 各 Extension が Γ(E)=E を満たすことの Lean 証明（証明書による）
 ```
 
 分析のコマンド（0.3.0 以降。いずれも決定論的）:
@@ -244,10 +245,16 @@ match "@A の評価" "@B の評価"             ; 前提どうしも対応づけ
 - 「違い」の列は、一方の読みでだけ中間の結論であること（0.5.3 以降）、成否の違い、preferred Extension が分かれること、補った前提・doubtful の評価・明示のない結び方に依存するのが一方だけであること、決め手の有無、独立した経路の数の違いを示す。
 - どちらの読みが正しいかは示さない。違いが書き起こしの誤りか、粒度の違いか、判断の違いか、原文の曖昧さかは、原文に照らして判断する（スキル mext-compare）。
 
-Lean 出力は、Γ を Lean の関数として定義し、`decide +kernel` で `isExtension T E = true` を示す。
+Lean 出力（0.6.0 以降）は、各 Extension E について、E の導出の列（証明書）を書き出し、`decide +kernel` で `checkCert T E cert = true` を示す。`checkCert` が確かめるのは次の三つである。
 
-- `--import-spec` を付けると、検査器を自前で定義せずに `lean/MextSpec.lean` を import する。そのうえで、健全性定理 `Mext.isExtension_sound` によって `Mext.ReiterExtension T E` まで示す。
+- 無矛盾: E は無矛盾である。
+- 閉包（Γ(E) ⊆ E）: E は W を含み、すべての規則と、正当化が E と無矛盾なデフォルトについて閉じている（前提が E にあれば結論も E にある）。Γ(E) はこの性質をもつ最小の集合なので、Γ(E) ⊆ E になる。
+- 導出（E ⊆ Γ(E)）: W から始めて、証明書の各段（規則 i か、正当化が E と無矛盾なデフォルト i）を、前提がそれまでに得られた集合に含まれるときにだけ使うと、E が得られる。
+
+`mext` は証明書を、W から前提の満たされた規則とデフォルトを順に使って作る。誤った証明書は検査を通らないだけなので、`mext` を信頼する必要は増えない。
+
+- `--import-spec` を付けると、検査器を自前で定義せずに `lean/MextSpec.lean`（Mathlib 不要）を import する。そのうえで、健全性定理 `Mext.checkCert_sound` によって `Mext.ReiterExtension T E` まで示す。
   - `ReiterExtension T E` は、E が無矛盾で、W を含み、規則と「正当化が E と無矛盾なデフォルト」とで閉じた集合のうち最小である、という Reiter の定義である。
-  - 健全性定理は、反復回数（規則の数 + デフォルトの数 + 1）で Γ の不動点に達することの証明を含む。
   - 依存する公理は Lean の標準の 3 つ（propext、Classical.choice、Quot.sound）だけである。
+- `--gamma` を付けると、0.5 までの方式（Γ を Lean の関数として定義し、反復して計算し直して `isExtension T E = true` を示す）で出力する。健全性定理は `Mext.isExtension_sound` で、反復回数（規則の数 + デフォルトの数 + 1）で Γ の不動点に達することの証明を含む。原子 約 210・規則 約 220・デフォルト 約 70 の理論で、Γ の方式は 89 秒・約 12 GB、証明書の方式は 11 秒・約 2.4 GB だった。
 - これで示せるのは、列挙された各集合が Extension であること（健全性）である。列挙が漏れなくなされていること（完全性）は、`mext` のアルゴリズムに依存する。

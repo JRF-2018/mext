@@ -1,22 +1,23 @@
 /-
-  MEXT の Lean 検査器の健全性
+  MEXT の Lean 検査器の健全性（Mathlib を使わない。Lean 4 の標準のライブラリだけで検査できる）
 
-  tools/mext.py の `lean` コマンドは、各 Extension E について
-    theorem : Mext.isExtension T E = true := by decide +kernel
-  を出力する。isExtension は Γ(E) を有限回の反復（規則の数 + デフォルトの数 + 1 回）で計算し、
-  E と集合として等しいかを Bool で判定する関数である。
+  mext の `lean` コマンドは、各 Extension E について、次のどちらかを出力する。
+  - 証明書による方式（0.6.0 以降の既定）:
+      theorem : Mext.checkCert T E cert = true := by decide +kernel
+    cert は mext が書き出す E の導出の列である。checkCert は、E が無矛盾であること、E が W を含み
+    規則と「正当化が E と無矛盾なデフォルト」とで閉じていること、cert の各段を W から順に使うと
+    E が得られることを Bool で確かめる。
+  - Γ を計算し直す方式（`mext lean --gamma`、0.5 までの方式）:
+      theorem : Mext.isExtension T E = true := by decide +kernel
+    isExtension は Γ(E) を有限回の反復（規則の数 + デフォルトの数 + 1 回）で計算し、E と比べる。
 
-  このファイルは、その Bool の判定が、Reiter の Extension の Prop としての定義
+  このファイルは、どちらの Bool の判定も、Reiter の Extension の Prop としての定義
   （E は無矛盾で、W を含み、規則と「正当化が E と無矛盾なデフォルト」とで閉じた最小の集合である）
-  を導くこと（健全性）を示す。
+  を導くこと（健全性: checkCert_sound と isExtension_sound）を示す。
 
-  定義（Dflt, Theory, subsetL, sameSet, consistentL, okDefaults, step, iter, gamma, isExtension）は
-  tools/mext.py の LEAN_PRELUDE と同じでなければならない。
+  定義（Dflt, Theory, subsetL, sameSet, consistentL, okDefaults, step, iter, gamma, isExtension,
+  Step, stepConcl, runCert, closedB, checkCert）は、mext/core.py の LEAN_PRELUDE と同じでなければならない。
 -/
-import Mathlib
-
-set_option linter.unnecessarySeqFocus false
-
 namespace Mext
 
 structure Dflt where
@@ -171,11 +172,11 @@ theorem filter_len_eq {α : Type} (p q : α → Bool) (l : List α)
     have ha := h a (List.mem_cons_self)
     intro b hb hqb
     rcases List.mem_cons.1 hb with rfl | hb
-    · by_contra hpb
-      have hpb' : p b = false := by simpa using hpb
-      simp only [List.filter_cons, hpb', hqb] at hl
-      simp at hl
-      omega
+    · cases hpb' : p b
+      · simp only [List.filter_cons, hpb', hqb] at hl
+        simp at hl
+        omega
+      · rfl
     · apply ih' _ b hb hqb
       simp only [List.filter_cons] at hl
       cases hp : p a <;> cases hq : q a <;> simp_all <;> omega
@@ -288,5 +289,151 @@ theorem isExtension_sound (T : Theory) (E : List Int) (h : isExtension T E = tru
       fun d hd hb c' hc' => hg _ (c d hd (fun y hy => hg' y (hb y hy)) c' hc')⟩
   · intro S hS x hx
     exact gamma_least T E S hS x (hg' x hx)
+
+
+/-! ## 証明書による検査（0.6.0 以降の既定）
+
+  Γ(E) を Lean の中で反復して計算し直す代わりに、mext が E の導出の列（証明書）を渡し、
+  Lean はそれを確かめるだけにする。確かめるのは次の三つである。
+  - 無矛盾: E は無矛盾（consistentL）。
+  - 閉包: E は W を含み、すべての規則と、正当化が E と無矛盾なデフォルトについて閉じている（closedB）。
+    これで Γ(E) ⊆ E になる（Γ(E) はこの性質をもつ最小の集合なので）。
+  - 導出: W から始めて、証明書の各段（規則 i か、正当化が E と無矛盾なデフォルト i）を、前提が
+    それまでに得られた集合に含まれる場合にだけ使い、最後に得られた集合が E を含む（runCert）。
+    これで E ⊆ Γ(E) になる。
+  反復の回数の上限を示す必要がなく、検査は証明書の長さと規則・デフォルトの数に比例する。
+-/
+
+/-- 証明書の一段: 規則 i か、デフォルト i を使う（i は T.rules / T.defaults の中の位置） -/
+inductive Step where
+  | rule (i : Nat)
+  | dflt (i : Nat)
+deriving Repr
+
+/-- 一段を集合 S で使えるなら、加わるリテラルを返す -/
+def stepConcl (T : Theory) (E : List Int) (S : List Int) : Step → Option (List Int)
+  | .rule i =>
+    match T.rules[i]? with
+    | some r => if subsetL r.1 S then some [r.2] else none
+    | none => none
+  | .dflt i =>
+    match T.defaults[i]? with
+    | some d => if subsetL d.pre S && d.just.all (fun j => !E.contains (-j)) then some d.concl else none
+    | none => none
+
+/-- 証明書の各段を順に使い、最後に得られた集合を返す（使えない段があれば none） -/
+def runCert (T : Theory) (E : List Int) : List Step → List Int → Option (List Int)
+  | [], S => some S
+  | s :: ss, S =>
+    match stepConcl T E S s with
+    | some c => runCert T E ss (S ++ c)
+    | none => none
+
+/-- E が W を含み、規則と、正当化が E と無矛盾なデフォルトについて閉じている -/
+def closedB (T : Theory) (E : List Int) : Bool :=
+  subsetL T.W E &&
+  T.rules.all (fun r => !subsetL r.1 E || E.contains r.2) &&
+  (okDefaults T E).all (fun d => !subsetL d.pre E || subsetL d.concl E)
+
+/-- 証明書による Extension の検査 -/
+def checkCert (T : Theory) (E : List Int) (cert : List Step) : Bool :=
+  consistentL E && closedB T E &&
+  match runCert T E cert T.W with
+  | some S => subsetL E S
+  | none => false
+
+theorem runCert_min (T : Theory) (E : List Int) (S' : List Int)
+    (hc : Closed T (okDefaults T E) S') :
+    ∀ (cert : List Step) (S0 S : List Int), runCert T E cert S0 = some S →
+      (∀ x ∈ S0, x ∈ S') → ∀ x ∈ S, x ∈ S' := by
+  intro cert
+  induction cert with
+  | nil =>
+    intro S0 S h h0
+    simp only [runCert, Option.some.injEq] at h
+    subst h; exact h0
+  | cons s ss ih =>
+    intro S0 S h h0
+    simp only [runCert] at h
+    cases hs : stepConcl T E S0 s with
+    | none => rw [hs] at h; simp at h
+    | some c =>
+      rw [hs] at h
+      simp only at h
+      refine ih _ _ h ?_
+      intro x hx
+      rcases List.mem_append.1 hx with hx | hx
+      · exact h0 x hx
+      · cases s with
+        | rule i =>
+          simp only [stepConcl] at hs
+          cases hr : T.rules[i]? with
+          | none => rw [hr] at hs; simp at hs
+          | some r =>
+            rw [hr] at hs
+            simp only at hs
+            split at hs
+            · rename_i hb
+              simp only [Option.some.injEq] at hs
+              subst hs
+              have hmem : r ∈ T.rules := List.mem_of_getElem? hr
+              have := hc.2.1 r hmem (fun y hy => h0 y ((subsetL_iff _ _).1 hb y hy))
+              simp only [List.mem_singleton] at hx
+              rw [hx]; exact this
+            · simp at hs
+        | dflt i =>
+          simp only [stepConcl] at hs
+          cases hd : T.defaults[i]? with
+          | none => rw [hd] at hs; simp at hs
+          | some d =>
+            rw [hd] at hs
+            simp only at hs
+            split at hs
+            · rename_i hb
+              simp only [Option.some.injEq] at hs
+              subst hs
+              rw [Bool.and_eq_true] at hb
+              have hmem : d ∈ T.defaults := List.mem_of_getElem? hd
+              have hok : d ∈ okDefaults T E := by
+                unfold okDefaults
+                exact List.mem_filter.2 ⟨hmem, hb.2⟩
+              exact hc.2.2 d hok (fun y hy => h0 y ((subsetL_iff _ _).1 hb.1 y hy)) x hx
+            · simp at hs
+
+/-- 健全性: 証明書の検査が通れば、Reiter の Extension である -/
+theorem checkCert_sound (T : Theory) (E : List Int) (cert : List Step)
+    (h : checkCert T E cert = true) : ReiterExtension T E := by
+  unfold checkCert at h
+  cases hr : runCert T E cert T.W with
+  | none => rw [hr] at h; simp at h
+  | some S =>
+    rw [hr] at h
+    simp only [Bool.and_eq_true] at h
+    obtain ⟨⟨h1, h2⟩, h3⟩ := h
+    unfold consistentL at h1
+    unfold closedB at h2
+    simp only [Bool.and_eq_true, List.all_eq_true, subsetL_iff, Bool.or_eq_true,
+      Bool.not_eq_true', List.contains_iff_mem] at h1 h2
+    obtain ⟨⟨hW, hR⟩, hD⟩ := h2
+    have hS3 := (subsetL_iff _ _).1 h3
+    have hclosed : Closed T (okDefaults T E) E := by
+      refine ⟨hW, ?_, ?_⟩
+      · intro r hr hb
+        rcases hR r hr with h | h
+        · have := (subsetL_iff _ _).2 hb
+          rw [this] at h; exact absurd h (by simp)
+        · exact h
+      · intro d hd hb
+        rcases hD d hd with h | h
+        · have := (subsetL_iff _ _).2 hb
+          rw [this] at h; exact absurd h (by simp)
+        · exact h
+    refine ⟨?_, hclosed, ?_⟩
+    · intro x hx hx'
+      have := h1 x hx
+      have h' : E.contains (-x) = true := List.contains_iff_mem.2 hx'
+      rw [h'] at this; exact absurd this (by simp)
+    · intro S' hS' x hx
+      exact runCert_min T E S' hS' cert T.W S hr hS'.1 x (hS3 x hx)
 
 end Mext
