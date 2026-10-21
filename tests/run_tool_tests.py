@@ -473,6 +473,48 @@ for f in sorted(_glob.glob(os.path.join(EX, '**', '*.mext'), recursive=True)):
 check(f'lean: 例のすべての Extension の証明書が、checkCert の条件を満たす（{n_ok}/{n_all}）', n_ok == n_all and n_all > 0)
 
 
+def check_pref_py(th, E, prio, hip, steps):
+    """Lean の checkPref のうち、優先の条件の部分を Python で写したもの"""
+    ds = list(th.defaults.values())
+    gen = lambda d: all(p in E for p in d.pre) and all(-j not in E for j in d.just)
+    rival = lambda d: all(p in E for p in d.pre) and not all(-j not in E for j in d.just)
+    if not set(prio) <= set(hip) or any(p[1] == q[0] and (p[0], q[1]) not in hip for p in hip for q in hip):
+        return False
+    if any(gen(d) and ('dflt', k) not in steps for k, d in enumerate(ds)):
+        return False
+    S = set(th.W)
+    for k, n in steps:
+        if k == 'rule':
+            S.add(th.rules[n].head)
+        else:
+            for a, b in hip:
+                if b == n and rival(ds[a]) and not any(-j in S for j in ds[a].just):
+                    return False
+            S |= set(ds[n].concl)
+    return True
+
+
+n_ok = n_all = n_np = 0
+for f in sorted(_glob.glob(os.path.join(EX, '**', '*.mext'), recursive=True)):
+    th = theory(f)
+    if not th.priority:
+        continue
+    exts, pref, _ = core.solve(th)
+    pos = {d.name: k for k, d in enumerate(th.defaults.values())}
+    hi = core.priority_closure(th.priority, list(th.defaults))
+    prio = [(pos[a], pos[b]) for a, b in th.priority]
+    hip = [(pos[a], pos[b]) for b, s_ in hi.items() for a in s_]
+    for E, pf in zip(exts, pref):
+        if E == core.INCONSISTENT:
+            continue
+        pc = core.lean_pref_certificate(th, E, hi)
+        n_all += 1
+        n_np += not pf
+        n_ok += (pc is not None) == pf and (pc is None or (check_cert_py(th, set(E), pc) and check_pref_py(th, set(E), prio, hip, pc)))
+check(f'lean: preferred の証明書が、preferred の Extension にだけあり、checkPref の条件を満たす（{n_ok}/{n_all}、preferred でないもの {n_np}）',
+      n_ok == n_all and n_np > 0)
+
+
 def lean_defs(text):
     """def / inductive / structure の定義の本体（コメントと空行を除く）"""
     text = re.sub(r'/-.*?-/', '', text, flags=re.S)

@@ -19,7 +19,7 @@
 - `X.matcha.md`: 書き起こしのメモ（対応表・書き起こしの判断・補った前提・落としたもの）
 - `X.mext`: デフォルト理論と Extension。AI の判断は `[ai]` に理由つきで書かれている
 - `X.alt-*.mext`: 試算（評価を退けた場合、反論が立証された場合など）
-- `X.lean`: 各 Extension が Reiter の Extension であることの Lean 証明
+- `X.lean`: 各 Extension が Reiter の Extension であることの Lean 証明（mext 0.5 までの方式で作ったもの。今の `mext lean` は証明書を使い、preferred も確かめる）
 - `X.mext-analysis.md`: 最終レポート
 - `X.sensitivity.md`、`X.summary.md`、`X.connectives.md`: 感度分析・要約・結び方の感度。`kindness_*` ではスキルが作ってレポートに使った。`yatoidome_memo` と `remote_work_op` の `X.sensitivity.md` は、実行のあとに 0.3.0 の道具で作って足したもので、レポートには反映されていない
 

@@ -1,6 +1,6 @@
 {
   "name": "mext",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "AI による論証の読みを、人が監査できる形にするスキル集（Matcha への書き起こしとデフォルト論理による計算） / Skills that make an AI's reading of an argument auditable by transcribing it into Matcha and computing it as default logic: mext-analysis (analyze the argument of any document), matcha-analysis (transcribe a document into Matcha), matcha-default-extensions (Extensions, verification, Lean proofs, reviews of applications), mext-compare (compare two readings of the same document)",
   "author": {
     "name": "JRF"

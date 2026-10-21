@@ -31,7 +31,7 @@ document ──(AI: matcha analysis)──▶ .matcha
                                                                         │
                   AI judgments ([ai]: identity, negation, reviews of evaluations) ─┤
                                                                         ▼
-                Enumeration of all Extensions, selection of preferred ones, verification ──▶ Lean proof (Γ(E) = E)
+                Enumeration of all Extensions, selection of preferred ones, verification ──▶ Lean proof (certificates: Γ(E) = E, preferred)
 ```
 
 - **Deterministic part** (this package):
@@ -165,7 +165,8 @@ Pitfalls in English text: a line ending in "… as drivers" is read as a label (
 - `lean/MextSpec.lean` (no Mathlib needed; plain Lean 4) proves the soundness theorem `Mext.checkCert_sound`: the check implies Reiter's definition of an Extension (E is consistent, contains W, and is the least set closed under the rules and the defaults whose justifications are consistent with E). It depends only on Lean's standard axioms (propext, Classical.choice, Quot.sound).
 - `mext lean --import-spec MODULE` writes proofs that go on to `Mext.ReiterExtension T E` via the soundness theorem.
 - The method up to 0.5, which recomputes Γ(E) inside Lean, is available as `mext lean --gamma` (soundness theorem `Mext.isExtension_sound`). On a theory with about 210 atoms, 220 rules and 70 defaults, it took 89 s and about 12 GB; the certificate method took 11 s and about 2.4 GB.
-- What this shows is that each enumerated set is an Extension (soundness). That the enumeration is complete, and which Extensions are preferred, rest on mext's algorithms.
+- For theories with priorities, preferred Extensions also get a certificate listing all generating defaults in an order that meets the priority condition, checked by `checkPref` (since 0.6.1). The soundness theorem `Mext.checkPref_sound` gives that E is a Reiter Extension and is generated respecting the priorities (`Mext.PreferredGen`, the definition of preferred in docs/mext.md stated as a Prop). mext supplies the transitive closure of the priorities, and Lean checks that it contains the given priorities and is transitively closed.
+- What this shows is that each enumerated set is an Extension and that those reported as preferred are preferred (soundness). That the enumeration is complete, and that those reported as not preferred are indeed not preferred, rest on mext's algorithms.
 
 ## Tests
 

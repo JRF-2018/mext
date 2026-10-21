@@ -257,4 +257,5 @@ Lean 出力（0.6.0 以降）は、各 Extension E について、E の導出の
   - `ReiterExtension T E` は、E が無矛盾で、W を含み、規則と「正当化が E と無矛盾なデフォルト」とで閉じた集合のうち最小である、という Reiter の定義である。
   - 依存する公理は Lean の標準の 3 つ（propext、Classical.choice、Quot.sound）だけである。
 - `--gamma` を付けると、0.5 までの方式（Γ を Lean の関数として定義し、反復して計算し直して `isExtension T E = true` を示す）で出力する。健全性定理は `Mext.isExtension_sound` で、反復回数（規則の数 + デフォルトの数 + 1）で Γ の不動点に達することの証明を含む。原子 約 210・規則 約 220・デフォルト 約 70 の理論で、Γ の方式は 89 秒・約 12 GB、証明書の方式は 11 秒・約 2.4 GB だった。
-- これで示せるのは、列挙された各集合が Extension であること（健全性）である。列挙が漏れなくなされていること（完全性）は、`mext` のアルゴリズムに依存する。
+- 優先順位のある理論では、preferred の Extension ごとに、preferred の証明書（すべての生成デフォルトを、優先の条件を満たす順に並べ、間に規則を挟んだもの）と、`checkPref T E P Hi pcert = true` を出す（0.6.1 以降）。`checkPref` は、`checkCert` に加えて、`Hi`（mext が渡す優先順位の推移的な閉包）が `P` を含み推移的に閉じていること、すべての生成デフォルトが証明書に現れること、各デフォルトの段で、それより優先される対立デフォルト（前提は E にあるが生成デフォルトでないもの）がそれまでの集合で打ち負かされていることを確かめる。`--import-spec` なら、健全性定理 `Mext.checkPref_sound` によって `Mext.ReiterExtension T E ∧ Mext.PreferredGen T P E` まで示す。`PreferredGen` は §1 の preferred の定義（(i) 根拠づけ、(ii) 優先の尊重）を、規則で導けること（`RuleDerivable`、規則で閉じた最小の集合）と優先順位の推移的な閉包（`Higher`）で書いた Prop である。preferred でない Extension は、Lean では示さない（その旨を注に書く）。
+- これで示せるのは、列挙された各集合が Extension であること、preferred とされたものが preferred であること（健全性）である。列挙が漏れなくなされていること（完全性）と、preferred でないとされたものが本当にそうでないことは、`mext` のアルゴリズムに依存する。

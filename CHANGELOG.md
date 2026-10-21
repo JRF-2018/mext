@@ -1,5 +1,12 @@
 # 変更履歴（mext）
 
+- **0.6.1**（2026-10-22）
+  - preferred であることも Lean で確かめるようにした。優先順位のある理論では、preferred の Extension ごとに、すべての生成デフォルトを優先の条件を満たす順に並べた証明書を出し、`checkPref T E P Hi pcert = true` を `decide +kernel` で示す。`checkPref` は `checkCert` に加えて、`Hi`（mext が渡す優先順位の推移的な閉包）が `P` を含み推移的に閉じていること、すべての生成デフォルトが証明書に現れること、各デフォルトの段で、それより優先される対立デフォルトが打ち負かされていることを確かめる。
+  - 健全性定理 `Mext.checkPref_sound`: 検査が通れば、`ReiterExtension T E ∧ PreferredGen T P E`。`PreferredGen` は docs/mext.md の preferred の定義（(i) 根拠づけ、(ii) 優先の尊重）を、規則で導けること（`RuleDerivable`）と優先順位の推移的な閉包（`Higher`、帰納的に定義）で書いた Prop で、検査器の手順を写したものではない。仕様と検査器と定理の主張は Claude Opus が書き、証明は Claude Sonnet のサブエージェントが書いた（約 230 行）。Opus が、定義と主張が変わっていないこと、`sorry` がないこと、公理（propext、Quot.sound）、Lean 4.34.1 と 4.35.0 で通ることを確かめた。
+  - preferred でない Extension は Lean では示さない（その旨を注に書く）。「preferred でない」ことの証明は、すべての順序を否定する必要があるので扱わない。
+  - Lean まわりの記述の取り残しを直した: 出力する `.lean` の冒頭のコメント（Γ を反復する方式だけを説明していた）、README の図、`lean/MextSpec.lean` の冒頭の定義の一覧、examples/analysis/README の `X.lean` の説明。スキルの出力の読み方（reading_results.md）に、Lean の検査が示す範囲（Extension であること、preferred とされたものが preferred であること）と示さないこと（preferred でないこと、列挙の完全性、書き起こしと審査の妥当性）を書いた。
+  - 速さ: 「ヨブ記」の読み（規則とデフォルト 155）で、健全性定理まで通して 8.5 秒・約 1.3 GB。
+  - テスト: preferred の証明書が preferred の Extension にだけ作られ、Python で写した checkPref の条件を満たすこと（例の 48 個、うち preferred でないもの 18 個）。保存してある比較の材料の、優先順位のある Extension 76 個でも、preferred の判定と証明書の有無が一致した。
 - **0.6.0**（2026-10-22）
   - Lean の出力を、証明書による検査に改めた。`mext lean` は各 Extension E の導出の列（証明書）を書き出し、Lean は `checkCert T E cert = true` を `decide +kernel` で確かめる。確かめるのは、E が無矛盾であること、E が W を含み規則と正当化が E と無矛盾なデフォルトとで閉じていること（Γ(E) ⊆ E）、証明書の各段を W から順に使うと E が得られること（E ⊆ Γ(E)）である。健全性定理 `Mext.checkCert_sound`（`lean/MextSpec.lean`）で、`Mext.ReiterExtension T E` が従う。証明は Claude Sonnet のサブエージェントが書き、Claude Opus が検査した（定義と定理の主張は変えていないこと、`sorry` がないこと、依存する公理が標準の 3 つであること）。
   - 速さ: 原子 約 210・規則 約 220・デフォルト 約 70 の理論（compare_material の tmp8）で、Γ を計算し直す方式は 89 秒・約 12 GB、証明書の方式は 11 秒・約 2.4 GB。`--import-spec` で健全性定理まで通しても 10 秒・約 2.4 GB。

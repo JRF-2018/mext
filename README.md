@@ -31,7 +31,7 @@ mext は論証の「正しさ」を判定しない。示すのは、書き起こ
                                                         │
               AI の判断（[ai]: 同一・否定・評価の審査）─┤
                                                         ▼
-                          Extension の全列挙・preferred の選択・検証 ──▶ Lean 証明（Γ(E) = E）
+                          Extension の全列挙・preferred の選択・検証 ──▶ Lean 証明（証明書の検査: Γ(E) = E、preferred）
 ```
 
 - **決定論的な部分**（このパッケージ）が受け持つもの:
@@ -168,7 +168,8 @@ Claude Code では次のように使う。プラグインとして入れた場�
 - `lean/MextSpec.lean`（Mathlib 不要。Lean 4 だけで検査できる）には、この判定が Reiter の Extension の定義（E は無矛盾で、W を含み、規則と正当化が E と無矛盾なデフォルトとで閉じた最小の集合）を導く、という健全性定理 `Mext.checkCert_sound` がある。依存する公理は Lean の標準のもの（propext、Classical.choice、Quot.sound）だけである。
 - `mext lean --import-spec MODULE` とすると、その健全性定理を使って `Mext.ReiterExtension T E` まで示すファイルを出力する。
 - 0.5 までの、Lean の中で Γ(E) を計算し直す方式は `mext lean --gamma` で使える（健全性定理 `Mext.isExtension_sound`）。原子 約 210・規則 約 220・デフォルト 約 70 の理論で、Γ の方式は 89 秒・約 12 GB、証明書の方式は 11 秒・約 2.4 GB だった。
-- 示せるのは、列挙された各集合が Extension であること（健全性）である。列挙に漏れがないこと（完全性）と、preferred であることは、mext のアルゴリズムに依存する。
+- 優先順位のある理論では、preferred の Extension について、すべての生成デフォルトを優先の条件を満たす順に並べた証明書も出し、`checkPref` で確かめる（0.6.1 以降）。健全性定理 `Mext.checkPref_sound` で、E が Reiter の Extension であり、かつ優先順位を尊重して生成される（`Mext.PreferredGen`。docs/mext.md の preferred の定義をそのまま Prop にしたもの）ことが従う。優先順位の推移的な閉包は mext が渡すが、Lean はそれが元の優先順位を含み、推移的に閉じていることも確かめる。
+- 示せるのは、列挙された各集合が Extension であること、preferred とされたものが preferred であること（健全性）である。列挙に漏れがないこと（完全性）と、preferred でないとされたものが本当に preferred でないことは、mext のアルゴリズムに依存する。
 
 ## テスト
 

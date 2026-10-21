@@ -16,7 +16,10 @@
   を導くこと（健全性: checkCert_sound と isExtension_sound）を示す。
 
   定義（Dflt, Theory, subsetL, sameSet, consistentL, okDefaults, step, iter, gamma, isExtension,
-  Step, stepConcl, runCert, closedB, checkCert）は、mext/core.py の LEAN_PRELUDE と同じでなければならない。
+  Step, stepConcl, runCert, closedB, checkCert, genB, rivalB, blockedB, runPref, dfltIdx, transClosedB, checkPref）は、
+  mext/core.py の LEAN_PRELUDE と同じでなければならない（tests/run_tool_tests.py が確かめる）。
+  preferred の仕様（Higher, RuleDerivable, Generating, Rival, conclOf, PreferredGen）と健全性定理 checkPref_sound は
+  このファイルにだけある。
 -/
 namespace Mext
 
@@ -435,5 +438,330 @@ theorem checkCert_sound (T : Theory) (E : List Int) (cert : List Step)
       rw [h'] at this; exact absurd this (by simp)
     · intro S' hS' x hx
       exact runCert_min T E S' hS' cert T.W S hr hS'.1 x (hS3 x hx)
+
+
+/-! ## preferred の検査（0.6.1 以降）
+
+  preferred Extension の定義（docs/mext.md「優先順位を尊重する生成」）:
+  E の生成デフォルト（前提が E に含まれ、正当化が E と無矛盾なもの）を一つずつ適用していく列 g1, g2, … があって、
+  各 gi を適用する時点の集合 S（W と g1…g(i−1) の結論から規則で導けるもの）で、
+  (i) gi の前提が S に含まれ、
+  (ii) gi より優先される（優先順位の推移的な閉包で）デフォルト d が E の生成デフォルトでなく、しかも
+       d の前提が E に含まれるなら、d の正当化のどれかの否定が S に含まれる（d はすでに打ち負かされている）。
+  デフォルトは T.defaults の中の位置で指す。prio は (優先される側, される側) の組の並び。
+-/
+
+/-- 優先順位の推移的な閉包: a は b より優先される -/
+inductive Higher (prio : List (Nat × Nat)) : Nat → Nat → Prop
+  | base {a b : Nat} : (a, b) ∈ prio → Higher prio a b
+  | trans {a b c : Nat} : Higher prio a b → Higher prio b c → Higher prio a c
+
+/-- x は A から規則で導ける（A を含み規則で閉じた、どの集合にも入る） -/
+def RuleDerivable (T : Theory) (A : List Int) (x : Int) : Prop :=
+  ∀ P : Int → Prop, (∀ y ∈ A, P y) → (∀ r ∈ T.rules, (∀ y ∈ r.1, P y) → P r.2) → P x
+
+/-- E の生成デフォルト: 前提が E に含まれ、正当化が E と無矛盾 -/
+def Generating (E : List Int) (d : Dflt) : Prop :=
+  (∀ x ∈ d.pre, x ∈ E) ∧ ∀ j ∈ d.just, -j ∉ E
+
+/-- 対立するデフォルト: 前提は E に含まれるが、生成デフォルトではない -/
+def Rival (E : List Int) (d : Dflt) : Prop :=
+  (∀ x ∈ d.pre, x ∈ E) ∧ ¬ ∀ j ∈ d.just, -j ∉ E
+
+/-- 位置の並び gs のデフォルトの結論を並べたもの -/
+def conclOf (T : Theory) (gs : List Nat) : List Int :=
+  ((gs.filterMap (fun i => T.defaults[i]?)).map (fun d => d.concl)).flatten
+
+/-- E は優先順位 prio を尊重して生成される（preferred Extension の条件） -/
+def PreferredGen (T : Theory) (prio : List (Nat × Nat)) (E : List Int) : Prop :=
+  ∃ gs : List Nat,
+    (∀ i d, T.defaults[i]? = some d → Generating E d → i ∈ gs) ∧
+    (∀ i ∈ gs, ∃ d, T.defaults[i]? = some d ∧ Generating E d) ∧
+    ∀ k (hk : k < gs.length), ∃ d, T.defaults[gs[k]]? = some d ∧
+      (∀ x ∈ d.pre, RuleDerivable T (T.W ++ conclOf T (gs.take k)) x) ∧
+      ∀ a da, Higher prio a gs[k] → T.defaults[a]? = some da → Rival E da →
+        ∃ j ∈ da.just, RuleDerivable T (T.W ++ conclOf T (gs.take k)) (-j)
+
+/-- Bool の判定: 生成デフォルトか -/
+def genB (E : List Int) (d : Dflt) : Bool :=
+  subsetL d.pre E && d.just.all (fun j => !E.contains (-j))
+
+/-- Bool の判定: 対立するデフォルトか -/
+def rivalB (E : List Int) (d : Dflt) : Bool :=
+  subsetL d.pre E && !(d.just.all (fun j => !E.contains (-j)))
+
+/-- デフォルト i を集合 S で適用するとき、i より優先される対立デフォルトがすべて打ち負かされているか（hi は閉包） -/
+def blockedB (T : Theory) (E : List Int) (hi : List (Nat × Nat)) (S : List Int) (i : Nat) : Bool :=
+  hi.all (fun p => p.2 != i ||
+    match T.defaults[p.1]? with
+    | some da => !rivalB E da || da.just.any (fun j => S.contains (-j))
+    | none => true)
+
+/-- 証明書を順に使い、デフォルトの各段で優先の条件を確かめる -/
+def runPref (T : Theory) (E : List Int) (hi : List (Nat × Nat)) : List Step → List Int → Bool
+  | [], _ => true
+  | s :: ss, S =>
+    match stepConcl T E S s with
+    | some c =>
+      (match s with
+       | .dflt i => blockedB T E hi S i
+       | .rule _ => true) && runPref T E hi ss (S ++ c)
+    | none => false
+
+/-- 証明書の中のデフォルトの位置 -/
+def dfltIdx : List Step → List Nat
+  | [] => []
+  | .rule _ :: ss => dfltIdx ss
+  | .dflt i :: ss => i :: dfltIdx ss
+
+/-- hi は推移的に閉じている -/
+def transClosedB (hi : List (Nat × Nat)) : Bool :=
+  hi.all (fun p => hi.all (fun q => p.2 != q.1 || hi.contains (p.1, q.2)))
+
+/-- preferred Extension の検査: Extension であること（checkCert）、hi が prio を含み推移的に閉じていること、
+    すべての生成デフォルトが証明書に現れること、各デフォルトの段で優先の条件が成り立つこと -/
+def checkPref (T : Theory) (E : List Int) (prio hi : List (Nat × Nat)) (cert : List Step) : Bool :=
+  checkCert T E cert && prio.all (fun p => hi.contains p) && transClosedB hi &&
+  (List.range T.defaults.length).all (fun i =>
+    match T.defaults[i]? with
+    | some d => !genB E d || (dfltIdx cert).contains i
+    | none => true) &&
+  runPref T E hi cert T.W
+
+theorem ruleDerivable_mono (T : Theory) (A B : List Int) (x : Int) (h : RuleDerivable T A x)
+    (hAB : ∀ y ∈ A, y ∈ B) : RuleDerivable T B x :=
+  fun P hB hr => h P (fun y hy => hB y (hAB y hy)) hr
+
+theorem higher_mem (prio hi : List (Nat × Nat)) (hprio : ∀ p ∈ prio, p ∈ hi)
+    (htr : transClosedB hi = true) {a b : Nat} (h : Higher prio a b) : (a, b) ∈ hi := by
+  induction h with
+  | base hab => exact hprio _ hab
+  | trans _ _ ih1 ih2 =>
+    rename_i a b c
+    unfold transClosedB at htr
+    simp only [List.all_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq, List.contains_iff_mem,
+      decide_eq_true_eq] at htr
+    have := htr _ ih1 _ ih2
+    rcases this with h | h
+    · exact absurd rfl h
+    · exact h
+
+theorem rivalB_of_rival (E : List Int) (d : Dflt) (h : Rival E d) : rivalB E d = true := by
+  obtain ⟨h1, h2⟩ := h
+  unfold rivalB
+  rw [Bool.and_eq_true]
+  refine ⟨(subsetL_iff _ _).2 h1, ?_⟩
+  cases ha : d.just.all (fun j => !E.contains (-j)) with
+  | true =>
+    exfalso; apply h2
+    intro j hj hj'
+    have := List.all_eq_true.1 ha j hj
+    simp only [Bool.not_eq_true', List.contains_eq_mem, decide_eq_false_iff_not] at this
+    exact this hj'
+  | false => rfl
+
+theorem conclOf_snoc (T : Theory) (pre : List Nat) (i : Nat) (d : Dflt)
+    (hd : T.defaults[i]? = some d) : conclOf T (pre ++ [i]) = conclOf T pre ++ d.concl := by
+  simp [conclOf, List.filterMap_append, hd]
+
+theorem stepConcl_rule (T : Theory) (E S : List Int) (i : Nat) (c : List Int)
+    (h : stepConcl T E S (.rule i) = some c) :
+    ∃ r, T.rules[i]? = some r ∧ (∀ y ∈ r.1, y ∈ S) ∧ c = [r.2] := by
+  simp only [stepConcl] at h
+  cases hr : T.rules[i]? with
+  | none => rw [hr] at h; simp at h
+  | some r =>
+    rw [hr] at h
+    simp only at h
+    split at h
+    · rename_i hb
+      simp only [Option.some.injEq] at h
+      exact ⟨r, rfl, (subsetL_iff _ _).1 hb, h.symm⟩
+    · simp at h
+
+theorem stepConcl_dflt (T : Theory) (E S : List Int) (i : Nat) (c : List Int)
+    (h : stepConcl T E S (.dflt i) = some c) :
+    ∃ d, T.defaults[i]? = some d ∧ (∀ y ∈ d.pre, y ∈ S) ∧ (∀ j ∈ d.just, -j ∉ E) ∧ c = d.concl := by
+  simp only [stepConcl] at h
+  cases hr : T.defaults[i]? with
+  | none => rw [hr] at h; simp at h
+  | some d =>
+    rw [hr] at h
+    simp only at h
+    split at h
+    · rename_i hb
+      simp only [Option.some.injEq, Bool.and_eq_true] at h hb
+      refine ⟨d, rfl, (subsetL_iff _ _).1 hb.1, ?_, h.symm⟩
+      intro j hj hj'
+      have := List.all_eq_true.1 hb.2 j hj
+      simp only [Bool.not_eq_true', List.contains_eq_mem, decide_eq_false_iff_not] at this
+      exact this hj'
+    · simp at h
+
+theorem runPref_cons (T : Theory) (E : List Int) (hi : List (Nat × Nat)) (s : Step) (ss : List Step)
+    (S : List Int) (h : runPref T E hi (s :: ss) S = true) :
+    ∃ c, stepConcl T E S s = some c ∧ runPref T E hi ss (S ++ c) = true ∧
+      ∀ i, s = .dflt i → blockedB T E hi S i = true := by
+  simp only [runPref] at h
+  cases hs : stepConcl T E S s with
+  | none => rw [hs] at h; simp at h
+  | some c =>
+    rw [hs] at h
+    simp only [Bool.and_eq_true] at h
+    refine ⟨c, rfl, h.2, ?_⟩
+    intro i hi'
+    subst hi'
+    exact h.1
+
+theorem stepConcl_sub (T : Theory) (E : List Int) (hc : Closed T (okDefaults T E) E)
+    (S : List Int) (hS : ∀ x ∈ S, x ∈ E) (s : Step) (c : List Int)
+    (h : stepConcl T E S s = some c) : ∀ x ∈ c, x ∈ E := by
+  cases s with
+  | rule i =>
+    obtain ⟨r, hr, hsub, rfl⟩ := stepConcl_rule _ _ _ _ _ h
+    intro x hx
+    simp only [List.mem_singleton] at hx
+    rw [hx]
+    exact hc.2.1 r (List.mem_of_getElem? hr) (fun y hy => hS y (hsub y hy))
+  | dflt i =>
+    obtain ⟨d, hd, hpre, hjust, rfl⟩ := stepConcl_dflt _ _ _ _ _ h
+    intro x hx
+    have hok : d ∈ okDefaults T E := by
+      unfold okDefaults
+      refine List.mem_filter.2 ⟨List.mem_of_getElem? hd, ?_⟩
+      rw [List.all_eq_true]
+      intro j hj
+      simp only [Bool.not_eq_true', List.contains_eq_mem, decide_eq_false_iff_not]
+      exact hjust j hj
+    exact hc.2.2 d hok (fun y hy => hS y (hpre y hy)) x hx
+
+theorem runPref_gen (T : Theory) (E : List Int) (hc : Closed T (okDefaults T E) E)
+    (hi : List (Nat × Nat)) :
+    ∀ (cert : List Step) (S : List Int), runPref T E hi cert S = true → (∀ x ∈ S, x ∈ E) →
+      ∀ i ∈ dfltIdx cert, ∃ d, T.defaults[i]? = some d ∧ Generating E d := by
+  intro cert
+  induction cert with
+  | nil => intro S _ _ i hi'; simp [dfltIdx] at hi'
+  | cons s ss ih =>
+    intro S h hE i hi'
+    obtain ⟨c, hs, hrest, _⟩ := runPref_cons _ _ _ _ _ _ h
+    have hE' : ∀ x ∈ S ++ c, x ∈ E := by
+      intro x hx
+      rcases List.mem_append.1 hx with hx | hx
+      · exact hE x hx
+      · exact stepConcl_sub T E hc S hE s c hs x hx
+    cases s with
+    | rule j => exact ih _ hrest hE' i hi'
+    | dflt j =>
+      simp only [dfltIdx, List.mem_cons] at hi'
+      rcases hi' with rfl | hi'
+      · obtain ⟨d, hd, hpre, hjust, rfl⟩ := stepConcl_dflt _ _ _ _ _ hs
+        exact ⟨d, hd, fun x hx => hE x (hpre x hx), hjust⟩
+      · exact ih _ hrest hE' i hi'
+
+theorem runPref_main (T : Theory) (E : List Int) (hc : Closed T (okDefaults T E) E)
+    (prio hi : List (Nat × Nat)) (hprio : ∀ p ∈ prio, p ∈ hi) (htr : transClosedB hi = true) :
+    ∀ (cert : List Step) (pre : List Nat) (S : List Int), runPref T E hi cert S = true →
+      (∀ x ∈ S, x ∈ E) → (∀ x ∈ S, RuleDerivable T (T.W ++ conclOf T pre) x) →
+      ∀ k (hk : k < (dfltIdx cert).length), ∃ d, T.defaults[(dfltIdx cert)[k]]? = some d ∧
+        (∀ x ∈ d.pre, RuleDerivable T (T.W ++ conclOf T (pre ++ (dfltIdx cert).take k)) x) ∧
+        ∀ a da, Higher prio a (dfltIdx cert)[k] → T.defaults[a]? = some da → Rival E da →
+          ∃ j ∈ da.just, RuleDerivable T (T.W ++ conclOf T (pre ++ (dfltIdx cert).take k)) (-j) := by
+  intro cert
+  induction cert with
+  | nil => intro pre S _ _ _ k hk; simp [dfltIdx] at hk
+  | cons s ss ih =>
+    intro pre S h hE hR k hk
+    obtain ⟨c, hs, hrest, hb⟩ := runPref_cons _ _ _ _ _ _ h
+    have hE' : ∀ x ∈ S ++ c, x ∈ E := by
+      intro x hx
+      rcases List.mem_append.1 hx with hx | hx
+      · exact hE x hx
+      · exact stepConcl_sub T E hc S hE s c hs x hx
+    cases s with
+    | rule i =>
+      obtain ⟨r, hr, hsub, rfl⟩ := stepConcl_rule _ _ _ _ _ hs
+      refine ih pre (S ++ [r.2]) hrest hE' ?_ k hk
+      intro x hx
+      rcases List.mem_append.1 hx with hx | hx
+      · exact hR x hx
+      · simp only [List.mem_singleton] at hx
+        rw [hx]
+        intro P hA hr'
+        exact hr' r (List.mem_of_getElem? hr) (fun y hy => hR y (hsub y hy) P hA hr')
+    | dflt i =>
+      obtain ⟨d, hd, hpre, hjust, rfl⟩ := stepConcl_dflt _ _ _ _ _ hs
+      have hb' := hb i rfl
+      cases k with
+      | zero =>
+        refine ⟨d, ?_, ?_, ?_⟩
+        · simpa [dfltIdx] using hd
+        · intro x hx
+          simpa [dfltIdx] using hR x (hpre x hx)
+        · intro a da hh hda hrv
+          have hh' : Higher prio a i := by simpa [dfltIdx] using hh
+          have hmem := higher_mem prio hi hprio htr hh'
+          unfold blockedB at hb'
+          have := List.all_eq_true.1 hb' _ hmem
+          simp only [hda, rivalB_of_rival E da hrv, Bool.or_eq_true, bne_iff_ne, ne_eq,
+            not_true_eq_false, decide_false, Bool.false_or, Bool.not_true, List.any_eq_true,
+            List.contains_iff_mem, decide_eq_true_eq, Bool.or_false] at this
+          rcases this with h0 | ⟨j, hj, hj'⟩
+          · exact absurd h0 id
+          exact ⟨j, hj, by simpa [dfltIdx] using hR _ hj'⟩
+      | succ k =>
+        have hk' : k < (dfltIdx ss).length := by simp [dfltIdx] at hk; omega
+        have hE'' := hE'
+        have hR' : ∀ x ∈ S ++ d.concl, RuleDerivable T (T.W ++ conclOf T (pre ++ [i])) x := by
+          intro x hx
+          rw [conclOf_snoc T pre i d hd]
+          rcases List.mem_append.1 hx with hx | hx
+          · exact ruleDerivable_mono _ _ _ _ (hR x hx) (by
+              intro y hy
+              rcases List.mem_append.1 hy with hy | hy
+              · exact List.mem_append_left _ hy
+              · exact List.mem_append_right _ (List.mem_append_left _ hy))
+          · intro P hA _
+            exact hA x (List.mem_append_right _ (List.mem_append_right _ hx))
+        have := ih (pre ++ [i]) (S ++ d.concl) hrest hE' hR' k hk'
+        have e : pre ++ (dfltIdx (Step.dflt i :: ss)).take (k+1) = (pre ++ [i]) ++ (dfltIdx ss).take k := by
+          simp [dfltIdx]
+        rw [e]
+        simpa [dfltIdx] using this
+
+/-- 健全性: preferred の検査が通れば、E は Reiter の Extension で、優先順位を尊重して生成される -/
+theorem checkPref_sound (T : Theory) (E : List Int) (prio hi : List (Nat × Nat)) (cert : List Step)
+    (h : checkPref T E prio hi cert = true) : ReiterExtension T E ∧ PreferredGen T prio E := by
+  have hce : ReiterExtension T E := by
+    apply checkCert_sound T E cert
+    unfold checkPref at h
+    simp only [Bool.and_eq_true] at h
+    exact h.1.1.1.1
+  refine ⟨hce, dfltIdx cert, ?_, ?_, ?_⟩
+  all_goals unfold checkPref at h
+  all_goals simp only [Bool.and_eq_true] at h
+  all_goals obtain ⟨⟨⟨⟨_, h2⟩, h3⟩, h4⟩, h5⟩ := h
+  · intro i d hd hg
+    have hlt : i < T.defaults.length := (List.getElem?_eq_some_iff.1 hd).1
+    have := List.all_eq_true.1 h4 i (List.mem_range.2 hlt)
+    rw [hd] at this
+    have hgB : genB E d = true := by
+      unfold genB
+      rw [Bool.and_eq_true]
+      refine ⟨(subsetL_iff _ _).2 hg.1, ?_⟩
+      rw [List.all_eq_true]
+      intro j hj
+      simp only [Bool.not_eq_true', List.contains_eq_mem, decide_eq_false_iff_not]
+      exact hg.2 j hj
+    simp only [hgB, Bool.not_true, Bool.false_or, List.contains_iff_mem] at this
+    exact this
+  · exact runPref_gen T E hce.2.1 hi cert T.W h5 hce.2.1.1
+  · have hprio : ∀ p ∈ prio, p ∈ hi := by
+      intro p hp
+      exact List.contains_iff_mem.1 (List.all_eq_true.1 h2 p hp)
+    intro k hk
+    have := runPref_main T E hce.2.1 prio hi hprio h3 cert [] T.W h5 hce.2.1.1
+      (fun x hx P hA _ => hA x (by simp [conclOf, hx])) k hk
+    simpa [conclOf] using this
 
 end Mext
