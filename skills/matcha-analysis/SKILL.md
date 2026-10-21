@@ -39,6 +39,7 @@ description: 「matcha分析」。任意の文書（法律の文書に限らな�
    ```
 
    `memo_and_revision.md` に従って、主な結論が出るか、lint の警告を見る。書き直すなら `snapshot` → 修正 → `diff` で、**原文への忠実さと粒度のためだけに**直す。
+   この `X.check.mext` は書き起こしの形を点検するためのもので、ここで計算される Extension は分析の結果として報告しない（Extension の計算と審査は mext分析の仕事）。利用者が「書き起こしだけ」「Extension は計算しない」と頼んだ場合も、手順 5 と 7 は省かない。
 6. **メモを書く**: `memo_and_revision.md` の章立てで `X.matcha.md` を仕上げる（対応表、結び方と事実の種別の表、補った前提、落としたもの、改訂の記録）。
 7. **記録**: 最後に一度 `python3 -m mext solve X.check.mext` を実行し、この時点の `X.matcha` と `X.matcha.md` のハッシュ値を残す（後で人が直したかを見分けるため）。以後は解き直さない。
 

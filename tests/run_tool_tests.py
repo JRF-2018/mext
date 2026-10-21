@@ -608,6 +608,21 @@ finally:
 
 # --- compare（読みの比較）
 from mext import compare
+# --- compare --init: 評価の対応づけの候補と、中間の結論の自動の対応
+d = tempfile.mkdtemp()
+try:
+    out = os.path.join(d, 'k.compare')
+    KA = os.path.join(EX, 'analysis', 'compare_kindness', 'A', 'kindness_essay.mext')
+    KB = os.path.join(EX, 'analysis', 'compare_kindness', 'B', 'kindness_essay.mext')
+    compare.template(compare.Reading(KA), compare.Reading(KB), out)
+    txt = open(out, encoding='utf-8').read()
+    check('compare --init: 事実か評価の文言の近い評価の組を候補に出す', '近い評価の組' in txt and txt.count(';   match') >= 2, txt[-1200:])
+    check('compare --init: 候補の行は、注を外せばそのまま [match] として読める',
+          not compare.CompareFile(out).load().errs)
+finally:
+    shutil.rmtree(d)
+
+
 cf = compare.CompareFile(os.path.join(TC, 'views.compare')).load()
 A, B = compare.Reading(cf.a), compare.Reading(cf.b)
 md = compare.compare_md(A, B, cf, 'views.compare')

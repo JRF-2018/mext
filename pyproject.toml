@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mext"
-version = "0.6.6"
+version = "0.6.7"
 description = "Make an AI's reading of an argument auditable: transcribe it into Matcha and compute it as default logic (syntax checker, Reiter/prioritized Extensions with Lean proofs, sensitivity analysis, comparison of readings)"
 readme = "README.md"
 license = { text = "MIT" }

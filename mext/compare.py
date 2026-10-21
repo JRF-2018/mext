@@ -191,6 +191,23 @@ def pair_matches(cf, A, B):
             concl.append((l, lb, _t('文言が同じ（自動）', 'same text (automatic)'), 'auto'))
             seen_a.add(l)
             seen_b.add(lb)
+    # 自動: 〔対象〕を除いた文言が同じ中間の結論（ほかの主張の前提に使われている結論。どちらの読みでも成り立つか否定が成り立つもの）
+    def concl_lits(R):
+        return [a.id for a in R.th.atoms.values() if a.kind == 'concl']
+    bmap2 = {}
+    for a in concl_lits(B):
+        bmap2.setdefault(base_text(B.th.lit_text(a)), a)
+    for a in concl_lits(A):
+        if a in seen_a or -a in seen_a:
+            continue
+        lb = bmap2.get(base_text(A.th.lit_text(a)))
+        if lb is None or lb in seen_b or -lb in seen_b:
+            continue
+        side_a = a if a in A.sk or a not in A.sk and -a not in A.sk else -a
+        side_b = lb if (side_a > 0) else -lb
+        concl.append((side_a, side_b, _t('文言が同じ（自動。中間の結論）', 'same text (automatic; intermediate conclusion)'), 'auto'))
+        seen_a.add(side_a)
+        seen_b.add(side_b)
     # 自動: 文言が同じ前提
     have = {(ca.text, cb.text) for ca, cb, _, _ in prem}
     btext = {}
@@ -405,6 +422,25 @@ def template(A, B, out_path):
         lines.append(_t('; 文言の近い組（文字の一致の割合による機械的な候補。対応するかは原文と両方の読みに照らして判断する）:',
                         '; pairs with similar texts (mechanical candidates by character overlap; judge against the source and both readings):'))
         lines += [f';   match {core.qs(A.th.lit_text(la))} {core.qs(B.th.lit_text(lb))}   ; {r:.2f}' for r, la, lb in sorted(sugg, reverse=True)]
+    # 評価の候補: 文言の近い評価の組（前提の対応づけの手がかり。評価の部分「@…」で比べる）
+    ev_a = [c for c in A.cands if c.kind in ('eval', 'eval-all')]
+    ev_b = [c for c in B.cands if c.kind in ('eval', 'eval-all')]
+    have = {(ca.text, cb.text) for ca, cb, _, _ in prem}
+    esugg = []
+    def sim(a, b):
+        # 事実の部分（原文の引用に近いことが多い）と評価の部分の、近いほう
+        fa, _, va = a.rpartition('@')
+        fb, _, vb = b.rpartition('@')
+        return max(difflib.SequenceMatcher(None, fa, fb).ratio(), difflib.SequenceMatcher(None, va, vb).ratio())
+    for ca in ev_a:
+        best = max(((sim(ca.text, cb.text), cb) for cb in ev_b), default=None, key=lambda x: x[0])
+        if best and best[0] >= 0.45 and (ca.text, best[1].text) not in have:
+            esugg.append((best[0], ca, best[1]))
+    if esugg:
+        lines.append(_t('; 事実か評価の文言の近い評価の組（前提の対応づけの機械的な候補。同じ判断かは原文に照らして判断する）:',
+                        '; evaluations whose fact or evaluation wording is similar (mechanical candidates for matching premises; judge against the source):'))
+        lines += [f';   match {core.qs(ca.text)} {core.qs(cb.text)}   ; {r:.2f}'
+                  for r, ca, cb in sorted(esugg, key=lambda x: -x[0])[:20]]
     lines.append(_t('; 対応のない最終的な結論（A）:', '; final conclusions with no counterpart (A):'))
     lines += [f';   {core.qs(A.th.lit_text(l))}' for l in ua]
     lines.append(_t('; 対応のない最終的な結論（B）:', '; final conclusions with no counterpart (B):'))
