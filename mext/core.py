@@ -841,7 +841,10 @@ def generating(th, E):
             if all(p in E for p in d.pre) and all(-j not in E for j in d.just)]
 
 
-def extensions(th, limit_conflicting=22):
+SMALL_CONFLICTING = 12   # これ以下なら、衝突しうるデフォルトの組を小さい順にすべて試す（Extension の番号の付き方を保つ）
+
+
+def extensions(th, limit_conflicting=30):
     defs = list(th.defaults.values())
     P = fast_closure(th, defs)          # 正当化を無視した、導出されうるリテラルの上界
     conflicting = [d for d in defs if any(-j in P for j in d.just)]
@@ -852,6 +855,28 @@ def extensions(th, limit_conflicting=22):
     base = fast_closure(th, [])
     if not consistent(base):
         return [INCONSISTENT], conflicting
+    if len(conflicting) > SMALL_CONFLICTING:
+        # 衝突しうるデフォルトが多いときは、全部の組を試す代わりに、採る・採らないを順に決める探索で列挙する。
+        # 採ったデフォルトの正当化が、そこまでの閉包で否定されたら、その先は Extension にならないので打ち切る
+        # （閉包は採るものを増やすほど大きくなる）。どの Extension E も、E と無矛盾な衝突しうるデフォルトをすべて採る枝で見つかる
+        def search(i, chosen, S):
+            if not consistent(S) or any(-j in S for d in chosen for j in d.just):
+                return
+            if i == len(conflicting):
+                if S not in found and is_extension(th, S):
+                    found.append(S)
+                return
+            d = conflicting[i]
+            search(i + 1, chosen + [d], fast_closure(th, safe + chosen + [d]))
+            # 採らない枝: d の前提がすでに満たされ、残りをどう選んでも d の正当化が否定されないなら、
+            # どの Extension でも d は採られる（その Extension は採る枝で見つかる）ので、打ち切る
+            if all(p in S for p in d.pre):
+                U = fast_closure(th, safe + chosen + conflicting[i + 1:])
+                if not any(-j in U for j in d.just):
+                    return
+            search(i + 1, chosen, S)
+        search(0, [], fast_closure(th, safe))
+        return found, conflicting
     for k in range(len(conflicting) + 1):
         for G in itertools.combinations(conflicting, k):
             S = fast_closure(th, safe + list(G))
@@ -961,6 +986,30 @@ def opposed(th, l):
     return any(-l in d.concl for d in th.defaults.values()) or any(r.head == -l for r in th.rules)
 
 
+def w_conflicts(th):
+    """W と確定規則だけで導けるリテラルのうち、その否定も導けるもの（理論全体が矛盾する原因）: [(l, -l)]"""
+    S = fast_closure(th, [])
+    W = {abs(l) for l in th.W}
+    # 原因になりやすい、W の事実どうしの組を先に（規則で導かれた要件の組は後に）
+    return sorted(((l, -l) for l in S if l > 0 and -l in S), key=lambda p: (p[0] not in W, p[0]))
+
+
+def w_conflict_text(th):
+    """W の矛盾を知らせる一文（矛盾がなければ空）"""
+    wc = w_conflicts(th)
+    if not wc:
+        return ''
+    pairs = ('、' if not _en() else ', ').join(
+        (f'「{th.lit_text(a)}」と「{th.lit_text(b)}」' if not _en() else f'“{th.lit_text(a)}” and “{th.lit_text(b)}”') for a, b in wc[:3])
+    return _t('**W の事実と確定規則が矛盾している**（{p}{m}）。理論全体が矛盾し、Extension は矛盾した集合一つだけになる。'
+              'どの結論の成否も意味をなさない。食い違う資料は、事実の対ではなく「資料 X は A と述べる」の形の事実と、'
+              '互いに否定し合う主張として書く（[ai] neg を事実どうしに使っていないかも確かめる）',
+              '**the facts in W and the strict rules are contradictory** ({p}{m}). The whole theory is inconsistent and its only '
+              'Extension is the inconsistent set, so no conclusion means anything. Write conflicting sources as facts of the form '
+              '“source X says A” and as claims that negate each other, not as a pair of facts (also check [ai] neg between facts)',
+              p=pairs, m=_t(' ほか {n} 組', ' and {n} more', n=len(wc) - 3) if len(wc) > 3 else '')
+
+
 def scope(th, exts, pref):
     """検証の範囲: 結果の見栄えが、実際に検証した範囲より強く見えないようにするための数"""
     st = list(getattr(th, 'eval_status', {}).values())
@@ -994,7 +1043,9 @@ def scope(th, exts, pref):
 
 def scope_text(th, sc):
     """検証の範囲の一行"""
-    t = _t('評価 {n} 個（未審査 {u}・ok {o}・doubtful {d}・reject {r}。doubtful と未審査の評価も推論を止めない）。',
+    t = w_conflict_text(th)
+    t = (t + ' ') if t else ''
+    t += _t('評価 {n} 個（未審査 {u}・ok {o}・doubtful {d}・reject {r}。doubtful と未審査の評価も推論を止めない）。',
            '{n} evaluations (unreviewed {u}, ok {o}, doubtful {d}, reject {r}; doubtful and unreviewed evaluations do not stop inference). ',
            n=sc["evals"], u=sc["unreviewed"], o=sc["ok"], d=sc["doubtful"], r=sc["reject"])
     rv = sc.get('apps_reviewed') or []

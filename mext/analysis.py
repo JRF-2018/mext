@@ -1118,7 +1118,8 @@ LINT_NAMES = _L({'同語反復の評価': ('同語反復の評価', 'tautologica
                  '報告型の結論': ('報告型の結論', 'reported views as conclusions'),
                  '評価に依存する報告': ('評価に依存する報告', 'reports that depend on evaluations'),
                  '原文に見当たらない引用': ('原文に見当たらない引用', 'quotations not found in the source'),
-                 '対象の違う同じ結論': ('対象の違う同じ結論', 'same conclusion with different targets'), '効いていない判断': ('効いていない判断', 'ineffective judgment'),
+                 '対象の違う同じ結論': ('対象の違う同じ結論', 'same conclusion with different targets'),
+                 '事実の矛盾': ('事実の矛盾', 'contradictory facts'), '効いていない判断': ('効いていない判断', 'ineffective judgment'),
                  '構文': ('構文', 'syntax')})
 
 
@@ -1261,6 +1262,10 @@ def lint(th, mf, exts=None, pref=None):
                             _t('主張 {n}（{c}）は、どの Extension にも含まれない。要件を満たす事実がないか、例外に打ち負かされている（mext explain で理由をたどれる）',
                                'claim {n} ({c}) is in no Extension: no fact satisfies its requirements, or an exception defeats it (see mext explain)',
                                n=name, c=th.lit_text(d.concl[0]))))
+    # W の事実と確定規則の矛盾（理論全体が矛盾する）
+    wct = core.w_conflict_text(th)
+    if wct:
+        out.append((W, _t('全体', 'whole'), '事実の矛盾', wct.replace('**', '')))
     # 対象だけが違う同じ文言の結論: 〔対象〕が違うと別の原子になるので、肯定と否定でも対立しない
     by_base = {}
     for d in th.defaults.values():

@@ -656,6 +656,50 @@ try:
 finally:
     shutil.rmtree(d)
 
+# --- W の事実と確定規則の矛盾を知らせる
+d = tempfile.mkdtemp()
+try:
+    open(os.path.join(d, 'w.matcha'), 'w', encoding='utf-8').write(
+        '#年 <= 時期: (\n    %開封 <= ルシアは1960年に公開するよう求めた\n    %移送 <= 文書は1957年にローマへ送られた\n) >> 文書はローマにあった as 年\n')
+    with contextlib.redirect_stdout(io.StringIO()):
+        core.main(['init', os.path.join(d, 'w.matcha')])
+    mp = os.path.join(d, 'w.mext')
+    txt = open(mp, encoding='utf-8').read().replace('[ai]\n', '[ai]\nneg "ルシアは1960年に公開するよう求めた" "文書は1957年にローマへ送られた" ; 試験\n', 1)
+    open(mp, 'w', encoding='utf-8').write(txt)
+    mf, th, _ = analysis.load(mp)
+    exts, pref, _ = core.solve(th)
+    st = core.scope_text(th, core.scope(th, exts, pref))
+    check('W の矛盾: 検証の範囲の先頭で、原因の事実の組を挙げて知らせる', st.startswith('**W の事実と確定規則が矛盾している**（「ルシアは1960年'), st[:120])
+    check('W の矛盾: lint が「事実の矛盾」として警告する', '事実の矛盾' in [x[2] for x in analysis.lint(th, mf, exts, pref)])
+finally:
+    shutil.rmtree(d)
+
+# --- Extension の列挙: 枝刈りのある探索が、組をすべて試す列挙と同じ集合を返す
+rng = _random.Random(31)
+bad = 0
+old_small = core.SMALL_CONFLICTING
+try:
+    for _ in range(300):
+        th = core.Theory()
+        atoms = [th.atom('extra', str(i)) for i in range(7)]
+        lits = atoms + [-a for a in atoms]
+        th.W = rng.sample(atoms, rng.randrange(3))
+        for j in range(rng.randrange(4, 11)):
+            c = rng.choice(lits)
+            th.add_default(core.Default(str(j), rng.sample(lits, rng.randrange(3)), [c] + rng.sample(lits, rng.randrange(3)),
+                                        [c] + rng.sample(lits, rng.randrange(2)), 'extra'))
+        for j in range(rng.randrange(0, 6)):
+            th.add_rule(rng.sample(lits, rng.randrange(3)), rng.choice(lits))
+        key = lambda xs: {frozenset(x) if x != core.INCONSISTENT else 'X' for x in xs}
+        core.SMALL_CONFLICTING = 0
+        a, _ = core.extensions(th)
+        core.SMALL_CONFLICTING = 99
+        b, _ = core.extensions(th)
+        bad += key(a) != key(b)
+finally:
+    core.SMALL_CONFLICTING = old_small
+check('extensions: 枝刈りのある探索が、組をすべて試す列挙と同じ Extension を返す（乱数の理論 300 個）', bad == 0, str(bad))
+
 # --- compare（読みの比較）
 from mext import compare
 # --- compare --init: 評価の対応づけの候補と、中間の結論の自動の対応
