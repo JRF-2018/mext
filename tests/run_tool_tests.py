@@ -545,6 +545,30 @@ exts, pref, _ = core.solve(th)
 st = core.scope_text(th, core.scope(th, exts, pref))
 check('scope: 否定が成り立つ最終的な結論を数える', '成り立つもの 1 個、否定が成り立つもの 1 個' in st, st)
 
+# --- 不成立の主張（!#）と論点
+d = tempfile.mkdtemp()
+try:
+    def solve_text(name, text):
+        open(os.path.join(d, name + '.matcha'), 'w', encoding='utf-8').write(text)
+        with contextlib.redirect_stdout(io.StringIO()):
+            core.main(['init', '--solve', os.path.join(d, name + '.matcha')])
+        th = theory(os.path.join(d, name + '.mext'))
+        exts, pref, _ = core.solve(th)
+        sk, _ = core.summarize(th, exts, pref)
+        return th, sk or set()
+    body = ("!#失効^憲法36条 <= 死刑規定: (\n"
+            "    {o}「残虐な刑罰」: ? 残虐な刑罰の意味 ~> 刑罰は時代に応じて変遷する => {i}%人道上残虐と認められる刑罰 <= 死刑は冷厳な刑罰である@死刑は直ちに残虐とは認められない\n"
+            ") >> 死刑規定は効力を失ったとはいえない as 失効論\n\n"
+            "#有効 <= 死刑規定: (\n    $失効論\n) >> 死刑規定は有効である as 有効\n")
+    res = []
+    for o, i in (('!', ''), ('', '!')):
+        th, sk = solve_text('bang' + str(len(res)), body.format(o=o, i=i))
+        res.append((core.lit_from_text(th, '死刑規定は効力を失ったとはいえない') in sk, core.lit_from_text(th, '死刑規定は有効である') in sk))
+    check('論点: 要件の前の ! が論点の規範に及ぶ（!「要件」: ? … と 「要件」: ? … => !%規範 が同じになる）', res[0] == res[1], str(res))
+    check('$ラベル: 不成立の主張を指すと、その結論（不成立からの帰結）と結ぶ', res[0] == (True, True), str(res))
+finally:
+    shutil.rmtree(d)
+
 # --- compare（読みの比較）
 from mext import compare
 cf = compare.CompareFile(os.path.join(TC, 'views.compare')).load()

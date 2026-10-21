@@ -319,6 +319,7 @@ class Compiler:
         self.n_reason = 0
         self.pending_ab = []
         self.pending_refs = []    # 要件として書かれた $ラベル（参照先は後で定義されることがある）
+        self.failure_concl = {}   # 結論が不成立からの帰結である主張のラベル -> その結論
         self.texts = set()        # 変換の前の原子の文言（same / neg で合併・否定された側も含む）
         self.claim_keys = set()
 
@@ -396,9 +397,11 @@ class Compiler:
         # 要件の位置の $ラベル が主張を指すときは、その主張と必要十分に結ぶ（主張の連鎖）: 主張 → 要件、¬主張 → ¬要件。
         # 規範・定義を指すとき（原典の `=> %規範 as 名前` … `$名前 <= 別の事実`）は、規範を別の事実に使い回す
         # 意味なので結ばない（参照先のあてはめの結果を持ち込まない）
+        # 結論が「不成立からの帰結」の主張（著者が ! を付けた反論など）を指すときは、主張の成立ではなく、
+        # その結論（「…とはいえない」）と結ぶ。主張と結ぶと、退けた反論が成り立つときにだけ要件が満たされる逆の意味になる
         for r, label, line in self.pending_refs:
-            t = self.th.labels.get(label)
-            if t is not None and t != r and self.th.by_id[abs(t)].kind == 'claim':
+            t = self.failure_concl.get(label, self.th.labels.get(label))
+            if t is not None and t != r and self.th.by_id[abs(t)].kind in ('claim', 'concl'):
                 self.define(r, [t], line, _t('{l} ${b} の参照', '{l} reference to ${b}', l=self.loc(line), b=label))
         for hi, lo in self.pending_ab:
             if hi not in self.th.defaults or lo not in self.th.defaults:
@@ -429,7 +432,7 @@ class Compiler:
             lits = [l for l in lits if l]
             return self.aux(n.op, lits, n.line) if lits else None
         if n.kind == 'issue':
-            return self.issue(n, path)
+            return self.issue(n, path, inherited)
         if n.kind in ('req', 'plain', 'ref'):
             return self.req(n, path, inherited)
         if n.kind == 'fact':
@@ -512,6 +515,8 @@ class Compiler:
             self.th.add_rule([-body], -k, n.line, _t('{l} 要件の否定による主張 {n} の不成立', '{l} claim {n} fails by the negation of its requirement', l=self.loc(n.line), n=name))
         if n.conclusion and failure:
             c = self.conclusion_lit(n, target)
+            if n.label:
+                self.failure_concl[n.label] = c   # $ラベル はこの結論（不成立からの帰結）を指す
             fname = self.th.add_default(Default(f'{name}.不成立', [], [-k, c], [c], 'failure', n.conclusion['line'],
                                                 _t('{l} 主張 {n} が成立しないことからの結論', '{l} conclusion from the failure of claim {n}',
                                                    l=self.loc(n.conclusion["line"]), n=name)))
@@ -591,7 +596,10 @@ class Compiler:
             return y
         return self.elem(n, '')
 
-    def issue(self, n, path):
+    def issue(self, n, path, inherited=None):
+        # 要件に付いた ! （!「要件」: ? 論点 => 規範 <= 事実）は、論点を通して規範とそのあてはめにも及ぶ。
+        # 及ばないと、不成立の根拠として書かれた事実と評価が、規範を満たす根拠として読まれてしまう
+        mark = n.mark or inherited
         if n.facts is not None:
             self.facts(n.facts)     # 問題提起の原因となる事実（W）
         key = f'{path}／? {n.head}' if path else f'? {n.head}'
@@ -602,11 +610,11 @@ class Compiler:
             if l:
                 parts.append(l)
         if n.norm is not None:
-            l = self.elem(n.norm, path, n.mark if n.norm.kind != 'group' else None)
+            l = self.elem(n.norm, path, mark if n.norm.kind != 'group' else None)
             if l:
                 parts.append(l)
         if n.application is not None:
-            l = self.elem(n.application, path)
+            l = self.elem(n.application, path, mark if n.application.kind != 'group' else None)
             if l:
                 parts.append(l)
         if parts:
