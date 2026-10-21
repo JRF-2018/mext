@@ -939,8 +939,8 @@ def scope_text(th, sc):
                 n=sc['apps'], k=len(rv), o=cnt['ok'], d=cnt['doubtful'], r=cnt['reject'])
     if sc.get('facts_total') and sc['facts']['未分類'] < sc['facts_total']:
         kinds = [(FACT_KIND_JA2EN.get(k, 'unclassified') if _en() else k, v) for k, v in sc['facts'].items() if v]
-        t += _t('W の事実 {n} 個（{k}。種別は AI の判断。仮定と著者の主張は感度分析で外す候補にする）。',
-                '{n} facts in W ({k}; the kinds are AI judgments; assumptions and author claims are candidates in the sensitivity analysis). ',
+        t += _t('W の事実 {n} 個（主張の対象を除く。{k}。種別は AI の判断。仮定と著者の主張は感度分析で外す候補にする）。',
+                '{n} facts in W (excluding the targets of claims; {k}; the kinds are AI judgments; assumptions and author claims are candidates in the sensitivity analysis). ',
                 n=sc["facts_total"], k=('・' if not _en() else ', ').join(f'{k} {v}' for k, v in kinds))
     if sc.get('supplied'):
         t += _t('書き起こした者が補った前提 {n} 個（[ai] の supplied。原文にない前提）。',

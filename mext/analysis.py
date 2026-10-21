@@ -476,9 +476,11 @@ def sensitivity_md(th, res, path, full=False):
     J = join
     out = [_t('# 感度分析: {f}', '# Sensitivity analysis: {f}', f=os.path.basename(path)), '',
            _t('（mext sensitivity の出力。争いうる前提を外して Extension を計算し直した結果。'
-              '外すのは下の候補だけで、W の事実と規則はそのまま。「成り立つ」は、すべての preferred Extension に含まれること）',
+              '外すのは下の候補だけで、規則と、候補でない W の事実はそのまま（W の事実が候補になるのは、[ai] fact-kind で仮定・著者の主張としたもの、'
+              '補った事実、--facts のとき）。「成り立つ」は、すべての preferred Extension に含まれること）',
               '(output of mext sensitivity: Extensions recomputed after removing contestable premises. Only the candidates below are '
-              'removed; facts in W and rules stay. “Holds” means being in every preferred Extension)'), '',
+              'removed; rules and the facts in W that are not candidates stay (facts in W become candidates when [ai] fact-kind marks them '
+              'as assumptions or author claims, when supplied, or with --facts). “Holds” means being in every preferred Extension)'), '',
            _t('基準の理論: Extension {e} 個（preferred {p} 個）。候補 {n} 個。{g}調べた', 'Base theory: {e} Extension(s) ({p} preferred). '
               '{n} candidates. Searched {g}', e=res["n_ext"], p=res["n_pref"], n=len(cands), g=res["grid_desc"])
            + (_t('（依存が見つからない結論は、支持の組を集めて、そのすべてと交わる組を大きさ 4 まで調べた）',
@@ -899,7 +901,7 @@ def summary_md(th, mf, path):
             singles = [cands[x] for x in p['singles']]
             ev = [c for c in singles if c.kind != 'claim']
             keys = join(short(c, 24) + (PARTIAL_MARK[0] if c.id in p.get('partial', ()) else '') for c in ev[:3]) \
-                + (_t(' ほか {n}', ' and {n} more', n=len(ev) - 3) if len(ev) > 3 else '') if ev else '—'
+                + (_t(' ほか {n}（主張を除く）', ' and {n} more (claims excluded)', n=len(ev) - 3) if len(ev) > 3 else '') if ev else '—'
             if p['groups']:
                 g = fmt_groups(p, limit=3)
                 if is_product(p):
@@ -1555,8 +1557,10 @@ def audit(path):
               a=sum(ok for _, ok, _ in v1), b=sum(ok for _, ok, _ in v2), n=len(v1)))
     # 出力のファイル
     for suf, item in (('.summary.md', 'summary'), ('.sensitivity.md', 'sensitivity'), ('.connectives.md', 'connectives'),
-                      ('.mext-analysis.md', _t('レポート', 'report'))):
-        f = base + suf
+                      (('.mext-analysis.md', '.report.md'), _t('レポート', 'report'))):
+        # レポートは、mext-analysis なら X.mext-analysis.md、matcha-default-extensions なら X.report.md
+        f = next((base + x for x in (suf if isinstance(suf, tuple) else (suf,)) if os.path.exists(base + x)),
+                 base + (suf[0] if isinstance(suf, tuple) else suf))
         add(True if os.path.exists(f) else None, _t('出力: {i}', 'output: {i}', i=item),
             os.path.basename(f) if os.path.exists(f) else _t('なし', 'none'))
     return rows

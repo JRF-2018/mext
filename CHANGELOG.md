@@ -1,5 +1,9 @@
 # 変更履歴（mext）
 
+- **0.6.2**（2026-10-22）
+  - audit: matcha-default-extensions のレポート（`X.report.md`）も「出力: レポート」として見つけるようにした（以前は `X.mext-analysis.md` だけを探していた）。
+  - 表示: 検証の範囲の「W の事実 N 個」に「主張の対象を除く」と添えた。sensitivity の冒頭の説明を、W の事実も候補になる場合（fact-kind の仮定・著者の主張、補った事実、`--facts`）に合わせて直した。summary の決め手の「ほか N」に「（主張を除く）」と添えた。例の `.mext` を解き直すと、生成部分の検証の範囲の一行が変わる（保存してあるファイルは解き直していない）。
+  - 以上は、Codex に matcha-default-extensions で `examples/self_defense.matcha` を調べさせた試験の感想から。この試験で Codex は、手引きだけを頼りに `lean/MextSpec.lean` を組み立て、preferred を含む健全性定理まで通した。同時に試した「なぜ人を殺してはいけないのか」の詳細な mext分析（主張 26）では、Lean の検査は 6.8 秒・約 1.5 GB だった（0.5 までの方式では、同じ規模で 60〜90 秒・9〜12 GB）。
 - **0.6.1**（2026-10-22）
   - preferred であることも Lean で確かめるようにした。優先順位のある理論では、preferred の Extension ごとに、すべての生成デフォルトを優先の条件を満たす順に並べた証明書を出し、`checkPref T E P Hi pcert = true` を `decide +kernel` で示す。`checkPref` は `checkCert` に加えて、`Hi`（mext が渡す優先順位の推移的な閉包）が `P` を含み推移的に閉じていること、すべての生成デフォルトが証明書に現れること、各デフォルトの段で、それより優先される対立デフォルトが打ち負かされていることを確かめる。
   - 健全性定理 `Mext.checkPref_sound`: 検査が通れば、`ReiterExtension T E ∧ PreferredGen T P E`。`PreferredGen` は docs/mext.md の preferred の定義（(i) 根拠づけ、(ii) 優先の尊重）を、規則で導けること（`RuleDerivable`）と優先順位の推移的な閉包（`Higher`、帰納的に定義）で書いた Prop で、検査器の手順を写したものではない。仕様と検査器と定理の主張は Claude Opus が書き、証明は Claude Sonnet のサブエージェントが書いた（約 230 行）。Opus が、定義と主張が変わっていないこと、`sorry` がないこと、公理（propext、Quot.sound）、Lean 4.34.1 と 4.35.0 で通ることを確かめた。
