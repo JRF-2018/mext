@@ -481,6 +481,11 @@ class Parser:
                                  'use {a} instead)', q=qq, a=alt)
                         break
                     q -= 1
+                if not hint and t.value == '@' and self.p > 0 and self.toks[self.p - 1].type == 'REF':
+                    hint = _t('（$ラベル には @評価 を付けられない。参照した主張の結論を要件として並べるなら $ラベル だけを書く。'
+                              'その結論をさらに評価するなら、結論の文を事実として書いて @評価 を付けるか、要件 %… <= 事実@評価 を別に立てる）',
+                              ' ($label cannot take @evaluation. To use the referenced conclusion as a requirement, write $label alone. '
+                              'To evaluate it further, write the conclusion as a fact with @evaluation, or add a requirement %… <= fact@evaluation)')
                 self.err(t, _t('{v} を受け取れる要素が直前にありません{h}', 'no preceding element can take {v}{h}', v=t.value, h=hint))
                 self.adv()
                 continue

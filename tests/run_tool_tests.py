@@ -624,6 +624,25 @@ try:
 finally:
     shutil.rmtree(d)
 
+# --- lint: [extra] が与える要件は「立証の手段のない要件」に数えない
+d = tempfile.mkdtemp()
+try:
+    open(os.path.join(d, 'c.matcha'), 'w', encoding='utf-8').write('#場合 <= 本件: (\n    %EFは素数である\n) >> 結論 as 場合\n')
+    with contextlib.redirect_stdout(io.StringIO()):
+        core.main(['init', os.path.join(d, 'c.matcha')])
+    mp = os.path.join(d, 'c.mext')
+    def kinds_of():
+        mf, th, _ = analysis.load(mp)
+        exts, pref, _ = core.solve(th)
+        return [x[2] for x in analysis.lint(th, mf, exts, pref)]
+    before = kinds_of()
+    txt = open(mp, encoding='utf-8').read().replace('[extra]\n', '[extra]\ndefault 場合素: : "場合／%EFは素数である" / "場合／%EFは素数である" ; 場合分け\n', 1)
+    open(mp, 'w', encoding='utf-8').write(txt)
+    after = kinds_of()
+    check('lint: [extra] が与える要件は「立証の手段のない要件」に数えない', '立証の手段のない要件' in before and '立証の手段のない要件' not in after, str((before, after)))
+finally:
+    shutil.rmtree(d)
+
 # --- compare（読みの比較）
 from mext import compare
 # --- compare --init: 評価の対応づけの候補と、中間の結論の自動の対応

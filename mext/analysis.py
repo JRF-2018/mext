@@ -1128,6 +1128,14 @@ def lint(th, mf, exts=None, pref=None):
 
     def at(f, line):
         return f'L{line}' if loc else f'{os.path.basename(f)}:L{line}'
+    # [extra] の事実・規則・デフォルトが結論として与えるリテラル（そうした要件は「立証の手段のない要件」に数えない）
+    extra_lits = {abs(c) for d in th.defaults.values() if d.kind == 'extra' for c in d.concl}
+    extra_lits |= {abs(r.head) for r in th.rules if r.line == 0}
+    extra_lits |= {abs(l) for l in th.W if th.by_id[abs(l)].kind != 'fact'}
+
+    def by_extra(n):
+        names = {n.head, f'%{n.head}', f'「{n.head}」'}
+        return any(abs(l) in extra_lits for nm in names for l in th.aliases.get(nm, ()))
     concl_texts = {}
     n_claims, one_step = 0, []
     for f, doc in zip(th.files, th.docs):
@@ -1145,7 +1153,7 @@ def lint(th, mf, exts=None, pref=None):
                                        'the evaluation “@{e}” nearly repeats the requirement “{h}”. The judgment from the fact to the '
                                        'requirement is folded into one step that mext cannot inspect. Can the steps (intermediate '
                                        'requirements, reasons for the evaluation) be written out?', e=e.eval, h=n.head)))
-            if n.kind == 'req' and n.facts is None and n.body is None and n.mark != '!':
+            if n.kind == 'req' and n.facts is None and n.body is None and n.mark != '!' and not by_extra(n):
                 hit = concl_texts.get(norm(n.head))
                 if hit:
                     lab = f'$' + hit[0] if hit[0] else _t('（as でラベルを付けて）$ラベル', '$label (after adding a label with as)')
