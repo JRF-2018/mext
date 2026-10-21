@@ -922,6 +922,8 @@ def scope(th, exts, pref):
             'apps': len(getattr(th, 'app_status', [])),
             'apps_reviewed': [x for x in getattr(th, 'app_status', []) if x[2]],
             'finals': finals, 'finals_hold': [l for l in finals if sk and l in sk],
+            # 結論の否定の側が成り立つもの（summary の表では否定の側を「成り立つ」と示す）
+            'finals_neg': [l for l in finals if sk and -l in sk],
             'unopposed': [l for l in finals if not opposed(th, l)]}
 
 
@@ -946,9 +948,11 @@ def scope_text(th, sc):
         t += _t('書き起こした者が補った前提 {n} 個（[ai] の supplied。原文にない前提）。',
                 '{n} premises supplied by the transcriber ([ai] supplied; not in the source). ', n=sc["supplied"])
     if sc['finals']:
-        t += _t('最終的な結論 {n} 個のうち、成り立つもの {h} 個、理論の中に対立する命題（否定）がないもの {u} 個',
-                'Of {n} final conclusions, {h} hold and {u} have no opposing proposition (negation) in the theory',
-                n=len(sc["finals"]), h=len(sc["finals_hold"]), u=len(sc["unopposed"]))
+        neg = len(sc.get('finals_neg', []))
+        t += _t('最終的な結論 {n} 個のうち、成り立つもの {h} 個{g}、理論の中に対立する命題（否定）がないもの {u} 個',
+                'Of {n} final conclusions, {h} hold{g} and {u} have no opposing proposition (negation) in the theory',
+                n=len(sc["finals"]), h=len(sc["finals_hold"]), u=len(sc["unopposed"]),
+                g=_t('、否定が成り立つもの {k} 個', ', the negations of {k} hold,', k=neg) if neg else '')
         if sc['unopposed']:
             t += _t('（これらは、反対の根拠に勝ったのではなく、反対の根拠が書かれていないだけである）',
                     ' (these did not defeat any counter-argument; no counter-argument was written)')

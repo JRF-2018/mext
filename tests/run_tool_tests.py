@@ -539,6 +539,12 @@ check('lean: 出力の検査器の定義が lean/MextSpec.lean と同じ', set(p
 check('lean: 出力の既定は証明書による検査', 'Mext.checkCert T E1 E1_cert = true' in core.lean_source(theory(os.path.join(EX, 'tweety.mext')),
       core.solve(theory(os.path.join(EX, 'tweety.mext')))[0], 'Tweety', 'tweety.mext'))
 
+# --- 検証の範囲: 否定の側が成り立つ最終的な結論も数える
+th = theory(os.path.join(EX, 'tweety.mext'))
+exts, pref, _ = core.solve(th)
+st = core.scope_text(th, core.scope(th, exts, pref))
+check('scope: 否定が成り立つ最終的な結論を数える', '成り立つもの 1 個、否定が成り立つもの 1 個' in st, st)
+
 # --- compare（読みの比較）
 from mext import compare
 cf = compare.CompareFile(os.path.join(TC, 'views.compare')).load()
