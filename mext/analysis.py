@@ -651,15 +651,21 @@ def connective_groups(th):
     return out
 
 
-def connective_record(th, f, g, claim, req):
-    """[ai] の connective の記録（明示 / 読み / None）"""
+def connective_names(th, f, g, claim, req):
+    """結び方の組を [ai] connective で指せる名前"""
     names = [f'L{g.line}']
     if len(th.files) > 1:
         names.append(f'{os.path.splitext(os.path.basename(f))[0]}:L{g.line}')
     if req is not None and req.head:
-        names += [req.head, f'%{req.head}', f'「{req.head}」']
+        names += [req.head, f'%{req.head}', f'「{req.head}」', f'? {req.head}', f'?{req.head}']
     if claim is not None:
         names += [x for x in (claim.label, claim.head, f'#{claim.head}' if claim.head else None) if x]
+    return names
+
+
+def connective_record(th, f, g, claim, req):
+    """[ai] の connective の記録（明示 / 読み / None）"""
+    names = connective_names(th, f, g, claim, req)
     for nm in names:
         if nm in getattr(th, 'connectives', {}):
             return th.connectives[nm][0], nm
@@ -1257,6 +1263,14 @@ def lint(th, mf, exts=None, pref=None):
                            'point elsewhere. Check against the source (do not put a paraphrase in quotation marks)',
                            n=len(miss), x=join(f'L{ln}' + (f' {q(t[:24] + ("…" if len(t) > 24 else ""))}') for ln, t in miss[:6])
                            + ('…' if len(miss) > 6 else ''))))
+    # [ai] connective の宛先が、どの結び方の組にも当たらない（効いていない）
+    known = {nm for f, g, claim, req in connective_groups(th) for nm in connective_names(th, f, g, claim, req)}
+    for t in getattr(th, 'connectives', {}):
+        if t not in known:
+            out.append((W, '[ai]', '効いていない判断',
+                        _t('[ai] connective の宛先「{x}」が、二つ以上を並べたどの箇所にも当たらない（効いていない）。'
+                           '主張のラベル、要件・論点の文言、または L行番号で指す', '[ai] connective target “{x}” matches no place that combines two or more items '
+                           '(it has no effect). Use a claim label, a requirement or issue text, or L<line>', x=t)))
     for e in mf.errs:
         out.append((W, '[ai]', '効いていない判断', e))
     return out

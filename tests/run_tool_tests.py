@@ -606,6 +606,21 @@ try:
 finally:
     shutil.rmtree(d)
 
+# --- [ai] connective の宛先が当たらなければ lint が知らせる
+d = tempfile.mkdtemp()
+try:
+    for f in ('sublease.matcha', 'sublease.mext'):
+        shutil.copy(os.path.join(EX, f), d)
+    mp = os.path.join(d, 'sublease.mext')
+    txt = open(mp, encoding='utf-8').read().replace('[ai]\n', '[ai]\nconnective "存在しない宛先" 読み ; 試験\n', 1)
+    open(mp, 'w', encoding='utf-8').write(txt)
+    mf, th, _ = analysis.load(mp)
+    exts, pref, _ = core.solve(th)
+    it = [x for x in analysis.lint(th, mf, exts, pref) if '存在しない宛先' in x[3]]
+    check('lint: [ai] connective の宛先が当たらなければ「効いていない判断」', len(it) == 1 and it[0][0] == '警告', str(it))
+finally:
+    shutil.rmtree(d)
+
 # --- compare（読みの比較）
 from mext import compare
 # --- compare --init: 評価の対応づけの候補と、中間の結論の自動の対応
