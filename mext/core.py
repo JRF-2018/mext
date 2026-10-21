@@ -989,7 +989,9 @@ def scope(th, exts, pref):
     wf = [th.by_id[abs(l)].text for l in th.W if th.by_id[abs(l)].text not in targets]
     facts = {k: sum(1 for t in wf if fk.get(t, (None,))[0] == k) for k in FACT_KINDS}
     facts['未分類'] = sum(1 for t in wf if t not in fk)
-    return {'facts_total': len(wf), 'facts': facts, 'supplied': len(getattr(th, 'supplied', {})),
+    unclassified = [t for t in wf if t not in fk]
+    return {'facts_total': len(wf), 'facts': facts, 'facts_unclassified': unclassified,
+            'unreviewed_texts': [t for t, v in getattr(th, 'eval_status', {}).items() if v is None], 'supplied': len(getattr(th, 'supplied', {})),
             'evals': len(st), 'unreviewed': sum(1 for x in st if x is None), 'ok': st.count('ok'),
             'doubtful': st.count('doubtful'), 'reject': st.count('reject'),
             'apps': len(getattr(th, 'app_status', [])),

@@ -1276,7 +1276,7 @@ def lint(th, mf, exts=None, pref=None):
     return out
 
 
-SRC_DECL = re.compile(r'^\s*//\s*(?:原文|Source document|Source text|Source)\s*[:：]\s*(\S+?\.(?:md|txt|html?))\b', re.I)
+SRC_DECL = re.compile(r'^\s*//\s*(?:原文|Source document|Source text|Source file|Original text|Original|Source)\s*[:：]\s*(\S+?\.(?:md|txt|html?))\b', re.I)
 QUOTE_RE = re.compile(r'「((?:[^「」]|「[^「」]*」)*)」|“([^”]*)”|"([^"]*)"')
 QUOTE_NORM = re.compile(r'[\s　「」『』“”"\'‘’（）()、，,。．.・]')
 
@@ -1569,11 +1569,15 @@ def audit(path):
         _t('なし', 'none') if not mf.errs else _t('{n} 件（solve の注意を見る）', '{n} (see the notices of solve)', n=len(mf.errs)))
     # AI の判断の記録
     sc = core.scope(th, exts, pref)
+    def which(ts):
+        # 抜けている判断の文言（[ai] に書き足すときの手がかり。多ければ先頭だけ）
+        return (_t(': ', ': ') + join(q(core.qs(t)[1:-1]) for t in ts[:5]) + (_t(' ほか {n} 個', ' and {n} more', n=len(ts) - 5) if len(ts) > 5 else '')) if ts else ''
     add(sc['unreviewed'] == 0, _t('評価の審査（review）', 'reviews of evaluations'),
-        _t('未審査 {n} 個 / 評価 {m} 個', 'unreviewed {n} of {m}', n=sc['unreviewed'], m=sc['evals']))
+        _t('未審査 {n} 個 / 評価 {m} 個', 'unreviewed {n} of {m}', n=sc['unreviewed'], m=sc['evals']) + which(sc.get('unreviewed_texts', [])))
     if sc.get('facts_total'):
         add(sc['facts']['未分類'] == 0, _t('事実の種別（fact-kind）', 'kinds of facts (fact-kind)'),
-            _t('未分類 {n} 個 / 事実 {m} 個', 'unclassified {n} of {m}', n=sc['facts']['未分類'], m=sc['facts_total']))
+            _t('未分類 {n} 個 / 事実 {m} 個', 'unclassified {n} of {m}', n=sc['facts']['未分類'], m=sc['facts_total'])
+            + which(sc.get('facts_unclassified', [])))
     rows_c = connective_sensitivity(th, mf)
     dec = [r for r in rows_c if r['final_hit']]
     unrec = [r for r in dec if r['record'] is None]

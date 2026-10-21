@@ -430,6 +430,9 @@ try:
         '// 出典: 第1段落「道に迷った人を助ける」。「例外にとどまる」は原文の評価を言い換えたもの。「」を『』に替えた\n#C <= 本件: (\n    %Z <= 例\n) >> 結論C as c\n')
     miss = analysis.quote_misses(os.path.join(d, 'q.matcha'))
     check('lint: 原文に見当たらない出典の引用（… で区切った引用は断片ごとに探す）', [m[0] for m in miss] == [8], str(miss))
+    txt = open(os.path.join(d, 'q.matcha'), encoding='utf-8').read().replace('// 原文: src.md', '// Original: src.md')
+    open(os.path.join(d, 'q2.matcha'), 'w', encoding='utf-8').write(txt)
+    check('lint: 原文の宣言は // Original: でもよい', [m[0] for m in analysis.quote_misses(os.path.join(d, 'q2.matcha'))] == [8])
 finally:
     shutil.rmtree(d)
 
