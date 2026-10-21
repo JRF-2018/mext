@@ -1117,7 +1117,8 @@ LINT_NAMES = _L({'同語反復の評価': ('同語反復の評価', 'tautologica
                  'どの Extension にも出ない主張': ('どの Extension にも出ない主張', 'claim in no Extension'),
                  '報告型の結論': ('報告型の結論', 'reported views as conclusions'),
                  '評価に依存する報告': ('評価に依存する報告', 'reports that depend on evaluations'),
-                 '原文に見当たらない引用': ('原文に見当たらない引用', 'quotations not found in the source'), '効いていない判断': ('効いていない判断', 'ineffective judgment'),
+                 '原文に見当たらない引用': ('原文に見当たらない引用', 'quotations not found in the source'),
+                 '対象の違う同じ結論': ('対象の違う同じ結論', 'same conclusion with different targets'), '効いていない判断': ('効いていない判断', 'ineffective judgment'),
                  '構文': ('構文', 'syntax')})
 
 
@@ -1260,6 +1261,22 @@ def lint(th, mf, exts=None, pref=None):
                             _t('主張 {n}（{c}）は、どの Extension にも含まれない。要件を満たす事実がないか、例外に打ち負かされている（mext explain で理由をたどれる）',
                                'claim {n} ({c}) is in no Extension: no fact satisfies its requirements, or an exception defeats it (see mext explain)',
                                n=name, c=th.lit_text(d.concl[0]))))
+    # 対象だけが違う同じ文言の結論: 〔対象〕が違うと別の原子になるので、肯定と否定でも対立しない
+    by_base = {}
+    for d in th.defaults.values():
+        if d.kind == 'claim' and len(d.concl) > 1:
+            c = d.concl[1]
+            base = re.sub(r'〔[^〔〕]*〕$', '', th.lit_text(abs(c))).strip()
+            by_base.setdefault(base, set()).add(c)
+    for base, cs in by_base.items():
+        atoms_ = {abs(c) for c in cs}
+        if len(atoms_) > 1 and any(c > 0 for c in cs) and any(c < 0 for c in cs):
+            out.append((W, _t('全体', 'whole'), '対象の違う同じ結論',
+                        _t('結論「{b}」の肯定と否定が、主張の対象（<= 対象）の違いで別の命題になっていて、対立していない（{x}）。'
+                           '同じ命題なら対象をそろえるか、[ai] same でまとめる',
+                           'the affirmation and negation of “{b}” are different propositions because their claims have different targets (<= target), '
+                           'so they do not conflict ({x}). If they are the same proposition, use the same target or join them with [ai] same',
+                           b=base, x=join(q(th.lit_text(abs(c))) for c in sorted(cs, key=abs)))))
     # 出典の引用が原文にあるか（// 原文: のファイルがあるときだけ。段落番号までは確かめない）
     for f in th.files:
         miss = quote_misses(f)

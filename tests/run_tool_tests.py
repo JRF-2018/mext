@@ -643,6 +643,19 @@ try:
 finally:
     shutil.rmtree(d)
 
+# --- lint: 対象の違う同じ結論（肯定と否定が対立しない）
+d = tempfile.mkdtemp()
+try:
+    open(os.path.join(d, 't.matcha'), 'w', encoding='utf-8').write(
+        '#甲説 <= 甲の議論: (\n    %理由一 <= 事実一\n) >> 労働価値説は正しい as 甲\n\n#乙説 <= 乙の議論: (\n    %理由二 <= 事実二\n) >> not 労働価値説は正しい as 乙\n')
+    with contextlib.redirect_stdout(io.StringIO()):
+        core.main(['init', '--solve', os.path.join(d, 't.matcha')])
+    mf, th, _ = analysis.load(os.path.join(d, 't.mext'))
+    exts, pref, _ = core.solve(th)
+    check('lint: 対象の違う同じ結論の肯定と否定を知らせる', '対象の違う同じ結論' in [x[2] for x in analysis.lint(th, mf, exts, pref)])
+finally:
+    shutil.rmtree(d)
+
 # --- compare（読みの比較）
 from mext import compare
 # --- compare --init: 評価の対応づけの候補と、中間の結論の自動の対応
